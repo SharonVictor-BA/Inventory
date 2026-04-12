@@ -118,6 +118,17 @@ def plot_bar(
     return fig
 
 
+def plot_selected_pc(scores: np.ndarray, title: str) -> plt.Figure:
+    """Plot selected PC score over monitoring window."""
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.plot(scores, color="teal")
+    ax.set_title(title)
+    ax.set_xlabel("Monitoring Index")
+    ax.set_ylabel("PC Score")
+    plt.tight_layout()
+    return fig
+
+
 # -----------------------------
 # Sidebar
 # -----------------------------
@@ -146,6 +157,12 @@ threshold_pct = st.sidebar.slider(
     max_value=99,
     value=99,
     step=1
+)
+
+selected_pc = st.sidebar.selectbox(
+    "Select Principal Component",
+    options=["PC1", "PC2", "PC3"],
+    index=0
 )
 
 # -----------------------------
@@ -230,6 +247,65 @@ T_nominal_full = pca_full.transform(X_nominal_scaled)
 T_monitor_full = pca_full.transform(X_monitor_scaled)
 lambda_full = pca_full.explained_variance_
 m = X_nominal.shape[1]
+
+# -----------------------------
+# Selected PC setup
+# -----------------------------
+pc_names = [f"PC{i+1}" for i in range(A)]
+
+loadings_df = pd.DataFrame(
+    pca.components_.T,
+    index=vars_used,
+    columns=pc_names
+)
+
+selected_pc_idx = int(selected_pc.replace("PC", "")) - 1
+
+if selected_pc_idx >= A:
+    st.warning(f"{selected_pc} is not available because only {A} principal components were retained.")
+    selected_pc_idx = A - 1
+    selected_pc = f"PC{A}"
+
+selected_pc_variance = pca.explained_variance_ratio_[selected_pc_idx] * 100
+selected_pc_scores_monitor = T_monitor[:, selected_pc_idx]
+
+selected_pc_loadings = (
+    loadings_df[[selected_pc]]
+    .rename(columns={selected_pc: "Loading"})
+    .sort_values("Loading", key=lambda s: s.abs(), ascending=False)
+    .reset_index()
+    .rename(columns={"index": "Variable"})
+)
+
+pc_meaning_map = {
+    "PC1": "Sales Intensity & Profitability",
+    "PC2": "Supply Volatility & Risk",
+    "PC3": "Operational Stability"
+}
+
+pc_business_map = {
+    "PC1": {
+        "meaning": "This component reflects sales strength and revenue contribution.",
+        "issue": "Large deviation suggests unusual demand or profitability movement.",
+        "action": "Review stock allocation, pricing, and replenishment for high-impact SKUs."
+    },
+    "PC2": {
+        "meaning": "This component reflects supply-side volatility and risk.",
+        "issue": "Large deviation suggests supplier delay, delivery inconsistency, or logistics instability.",
+        "action": "Prioritize supplier review, lead-time monitoring, and contingency planning."
+    },
+    "PC3": {
+        "meaning": "This component reflects operational stability.",
+        "issue": "Large deviation suggests process instability or gradual degradation in operations.",
+        "action": "Investigate recurring operational inefficiencies and stabilize execution."
+    }
+}
+
+pc_info = pc_business_map.get(selected_pc, {
+    "meaning": "This principal component captures key system variation.",
+    "issue": "Deviation indicates a change in behaviour that should be investigated.",
+    "action": "Review the highest contributing variables and take corrective action."
+})
 
 # -----------------------------
 # Residuals
@@ -325,7 +401,7 @@ if first_alarm is not None:
     business_df["Business_Action"] = business_df["Variable"].map(action_map).fillna("Investigate and monitor closely")
 
 # -----------------------------
-# Tabs - Updated to 3 tabs only
+# Tabs - 3 tabs only
 # -----------------------------
 tab1, tab2, tab3 = st.tabs([
     "Technical Outcome",
@@ -354,6 +430,22 @@ with tab1:
     )
     st.pyplot(fig_monitor)
 
+    st.markdown("### Selected Principal Component")
+    c5, c6 = st.columns([1, 2])
+
+    with c5:
+        st.metric("Selected PC", selected_pc)
+        st.metric("Variance Explained (%)", round(selected_pc_variance, 2))
+        st.info(f"**{selected_pc}** represents **{pc_meaning_map.get(selected_pc, 'Key system behaviour')}**.")
+
+    with c6:
+        st.pyplot(
+            plot_selected_pc(
+                selected_pc_scores_monitor,
+                f"{selected_pc} Score Across Monitoring Window"
+            )
+        )
+
     st.markdown("### Technical Interpretation")
     st.write(
         """
@@ -374,6 +466,21 @@ with tab1:
 # -----------------------------
 with tab2:
     st.subheader("Analytical Outcome")
+
+    st.markdown("### Selected PC Loadings")
+    st.write(
+        f"The table below shows which variables contribute most strongly to **{selected_pc}**."
+    )
+    st.dataframe(selected_pc_loadings, use_container_width=True)
+
+    fig_pc_loadings = plot_bar(
+        df=selected_pc_loadings.head(5),
+        x_col="Variable",
+        y_col="Loading",
+        title=f"Top Variable Loadings for {selected_pc}",
+        palette="viridis"
+    )
+    st.pyplot(fig_pc_loadings)
 
     if first_alarm is None or contrib_df is None or recon_df is None:
         st.info("No anomaly detected, so analytical insights are not available.")
@@ -418,6 +525,11 @@ with tab2:
 with tab3:
     st.subheader("Business Outcome")
 
+    st.markdown("### Selected PC Business Interpretation")
+    st.write(f"**Meaning:** {pc_info['meaning']}")
+    st.write(f"**Issue if abnormal:** {pc_info['issue']}")
+    st.write(f"**Recommended action:** {pc_info['action']}")
+
     if first_alarm is None or business_df is None:
         st.info("No business action required because no anomaly was detected.")
     else:
@@ -439,6 +551,7 @@ with tab3:
         st.markdown("## AI Solution Recommendations")
 
         recommendations = [
+            f"Use **{selected_pc}-driven monitoring** to continuously track the most business-relevant system behaviour.",
             "Use **predictive replenishment models** to dynamically adjust stock during abnormal demand spikes.",
             "Apply **supplier risk scoring** when lead time or delivery reliability contributes strongly to anomalies.",
             "Enable **real-time alerting dashboards** for operations, procurement, and inventory teams.",
