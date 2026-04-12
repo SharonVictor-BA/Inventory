@@ -211,6 +211,37 @@ if len(vars_used) < 3:
     st.error("Please select at least 3 numeric variables.")
     st.stop()
 
+# -----------------------------
+# PC-specific variable groups
+# -----------------------------
+pc_variable_groups = {
+    "PC1": [
+        "sales_qty",
+        "sales_revenue",
+        "margin",
+        "sales_frequency"
+    ],
+    "PC2": [
+        "lead_time_days",
+        "delivery_reliability",
+        "obsolescence_risk",
+        "supply_variability",
+        "stockout_risk"
+    ],
+    "PC3": [
+        "inventory_turnover",
+        "fill_rate",
+        "service_level",
+        "order_cycle_time",
+        "forecast_error"
+    ]
+}
+
+pc_available_variables = {
+    pc: [v for v in variables if v in vars_used]
+    for pc, variables in pc_variable_groups.items()
+}
+
 X = df[vars_used].copy()
 X = X.apply(pd.to_numeric, errors="coerce")
 X = X.fillna(X.median())
@@ -285,24 +316,32 @@ pc_meaning_map = {
 
 pc_business_map = {
     "PC1": {
-        "meaning": "This component reflects sales strength and revenue contribution.",
-        "issue": "Large deviation suggests unusual demand or profitability movement.",
-        "action": "Review stock allocation, pricing, and replenishment for high-impact SKUs."
+        "title": "Sales Intensity & Profitability",
+        "meaning": "This component reflects sales performance, revenue generation, and product profitability.",
+        "focus_variables": pc_available_variables.get("PC1", []),
+        "issue": "Large deviation suggests abnormal sales movement, unusual profitability shifts, or demand spikes/drops.",
+        "action": "Review stock allocation, pricing strategy, and replenishment planning for high-impact SKUs."
     },
     "PC2": {
-        "meaning": "This component reflects supply-side volatility and risk.",
-        "issue": "Large deviation suggests supplier delay, delivery inconsistency, or logistics instability.",
-        "action": "Prioritize supplier review, lead-time monitoring, and contingency planning."
+        "title": "Supply Volatility & Risk",
+        "meaning": "This component reflects supplier delay, delivery inconsistency, and inventory risk exposure.",
+        "focus_variables": pc_available_variables.get("PC2", []),
+        "issue": "Large deviation suggests supply instability, logistics disruption, or rising stockout/obsolescence risk.",
+        "action": "Review lead times, supplier performance, safety stock policy, and contingency sourcing plans."
     },
     "PC3": {
-        "meaning": "This component reflects operational stability.",
-        "issue": "Large deviation suggests process instability or gradual degradation in operations.",
-        "action": "Investigate recurring operational inefficiencies and stabilize execution."
+        "title": "Operational Stability",
+        "meaning": "This component reflects the consistency and efficiency of inventory operations and execution.",
+        "focus_variables": pc_available_variables.get("PC3", []),
+        "issue": "Large deviation suggests operational instability, process inefficiency, or recurring execution issues.",
+        "action": "Investigate workflow consistency, planning accuracy, service levels, and operational control performance."
     }
 }
 
 pc_info = pc_business_map.get(selected_pc, {
+    "title": "Selected Principal Component",
     "meaning": "This principal component captures key system variation.",
+    "focus_variables": [],
     "issue": "Deviation indicates a change in behaviour that should be investigated.",
     "action": "Review the highest contributing variables and take corrective action."
 })
@@ -431,12 +470,20 @@ with tab1:
     st.pyplot(fig_monitor)
 
     st.markdown("### Selected Principal Component")
+
     c5, c6 = st.columns([1, 2])
 
     with c5:
         st.metric("Selected PC", selected_pc)
         st.metric("Variance Explained (%)", round(selected_pc_variance, 2))
         st.info(f"**{selected_pc}** represents **{pc_meaning_map.get(selected_pc, 'Key system behaviour')}**.")
+
+        st.markdown("### Variables Associated with Selected PC")
+        selected_pc_vars = pc_available_variables.get(selected_pc, [])
+        if selected_pc_vars:
+            st.write(selected_pc_vars)
+        else:
+            st.warning(f"No dedicated variables from the {selected_pc} group were found in the uploaded dataset.")
 
     with c6:
         st.pyplot(
@@ -468,19 +515,44 @@ with tab2:
     st.subheader("Analytical Outcome")
 
     st.markdown("### Selected PC Loadings")
-    st.write(
-        f"The table below shows which variables contribute most strongly to **{selected_pc}**."
-    )
-    st.dataframe(selected_pc_loadings, use_container_width=True)
 
-    fig_pc_loadings = plot_bar(
-        df=selected_pc_loadings.head(5),
-        x_col="Variable",
-        y_col="Loading",
-        title=f"Top Variable Loadings for {selected_pc}",
-        palette="viridis"
-    )
-    st.pyplot(fig_pc_loadings)
+    selected_pc_vars = pc_available_variables.get(selected_pc, [])
+
+    if selected_pc_vars:
+        selected_pc_loadings_filtered = selected_pc_loadings[
+            selected_pc_loadings["Variable"].isin(selected_pc_vars)
+        ].copy()
+
+        if selected_pc_loadings_filtered.empty:
+            selected_pc_loadings_filtered = selected_pc_loadings.copy()
+
+        st.write(
+            f"The table below shows the most relevant variables for **{selected_pc}** based on its business meaning."
+        )
+
+        st.dataframe(selected_pc_loadings_filtered, use_container_width=True)
+
+        fig_pc_loadings = plot_bar(
+            df=selected_pc_loadings_filtered.head(5),
+            x_col="Variable",
+            y_col="Loading",
+            title=f"Top Variable Loadings for {selected_pc}",
+            palette="viridis"
+        )
+        st.pyplot(fig_pc_loadings)
+    else:
+        st.warning(f"No matching variables found for {selected_pc}. Showing all loadings instead.")
+
+        st.dataframe(selected_pc_loadings, use_container_width=True)
+
+        fig_pc_loadings = plot_bar(
+            df=selected_pc_loadings.head(5),
+            x_col="Variable",
+            y_col="Loading",
+            title=f"Top Variable Loadings for {selected_pc}",
+            palette="viridis"
+        )
+        st.pyplot(fig_pc_loadings)
 
     if first_alarm is None or contrib_df is None or recon_df is None:
         st.info("No anomaly detected, so analytical insights are not available.")
@@ -530,6 +602,12 @@ with tab3:
     st.write(f"**Issue if abnormal:** {pc_info['issue']}")
     st.write(f"**Recommended action:** {pc_info['action']}")
 
+    st.markdown("### Variables Driving This Component")
+    if pc_info.get("focus_variables"):
+        st.write(pc_info["focus_variables"])
+    else:
+        st.info("No dedicated variables from this PC group were found in the dataset.")
+
     if first_alarm is None or business_df is None:
         st.info("No business action required because no anomaly was detected.")
     else:
@@ -550,14 +628,33 @@ with tab3:
         st.markdown("---")
         st.markdown("## AI Solution Recommendations")
 
-        recommendations = [
-            f"Use **{selected_pc}-driven monitoring** to continuously track the most business-relevant system behaviour.",
-            "Use **predictive replenishment models** to dynamically adjust stock during abnormal demand spikes.",
-            "Apply **supplier risk scoring** when lead time or delivery reliability contributes strongly to anomalies.",
-            "Enable **real-time alerting dashboards** for operations, procurement, and inventory teams.",
-            "Use **root-cause explanation modules** to prioritize investigation on the highest contributing variable.",
-            "Integrate **forecasting + anomaly detection** to proactively manage stockouts, overstock, and supply disruptions."
-        ]
+        if selected_pc == "PC1":
+            recommendations = [
+                "Use **AI-driven demand sensing** to detect sudden sales spikes or drops early.",
+                "Apply **dynamic pricing and replenishment optimization** for high-revenue SKUs.",
+                "Use **profitability-aware inventory planning** to prioritize high-margin products.",
+                "Combine anomaly detection with **sales forecasting models** for proactive stock planning."
+            ]
+        elif selected_pc == "PC2":
+            recommendations = [
+                "Use **supplier risk scoring models** to identify unstable vendors early.",
+                "Apply **lead-time prediction models** to improve replenishment reliability.",
+                "Use **stockout risk prediction** to strengthen safety stock planning.",
+                "Deploy **real-time logistics alerts** when supply behaviour becomes unstable."
+            ]
+        elif selected_pc == "PC3":
+            recommendations = [
+                "Use **process stability monitoring models** to detect recurring execution inefficiencies.",
+                "Apply **service-level prediction models** to anticipate operational degradation.",
+                "Use **forecast error monitoring** to improve planning accuracy.",
+                "Deploy **AI-based operational dashboards** for continuous execution control."
+            ]
+        else:
+            recommendations = [
+                "Use predictive monitoring models to detect anomalies early.",
+                "Apply AI-based dashboards for decision support.",
+                "Integrate anomaly detection with forecasting and inventory planning."
+            ]
 
         for rec in recommendations:
             st.markdown(f"- {rec}")
