@@ -130,6 +130,220 @@ def plot_selected_pc(scores: np.ndarray, title: str) -> plt.Figure:
 
 
 # -----------------------------
+# AI Solution Module Helpers
+# -----------------------------
+def safe_normalize(series: pd.Series) -> pd.Series:
+    """Normalize a numeric series to 0-1 safely."""
+    series = pd.to_numeric(series, errors="coerce")
+    median_value = series.median() if not series.dropna().empty else 0.0
+    series = series.fillna(median_value)
+    min_val = series.min()
+    max_val = series.max()
+    if max_val == min_val:
+        return pd.Series(np.zeros(len(series)), index=series.index)
+    return (series - min_val) / (max_val - min_val)
+
+
+def build_pc1_solution_module(df: pd.DataFrame) -> dict:
+    """
+    PC1: Sales Intensity & Profitability
+    Uses sales_qty, sales_revenue, margin if available
+    """
+    result = {
+        "module": "PC1 - Demand & Profitability Optimization",
+        "status": "Unavailable",
+        "summary": "Not enough sales-related variables found.",
+        "metrics": {},
+        "recommendation": "Upload sales and profitability fields such as sales_qty, sales_revenue, and margin."
+    }
+
+    available = [c for c in ["sales_qty", "sales_revenue", "margin", "sales_frequency"] if c in df.columns]
+    if not available:
+        return result
+
+    metrics = {}
+
+    if "sales_qty" in df.columns:
+        sales_qty = pd.to_numeric(df["sales_qty"], errors="coerce")
+        sales_qty = sales_qty.fillna(sales_qty.median() if not sales_qty.dropna().empty else 0.0)
+        if len(sales_qty) >= 2:
+            last = sales_qty.iloc[-1]
+            prev = sales_qty.iloc[-2]
+            demand_change_pct = ((last - prev) / max(prev, 1)) * 100
+        else:
+            demand_change_pct = 0.0
+        metrics["Demand Change (%)"] = round(float(demand_change_pct), 2)
+    else:
+        demand_change_pct = 0.0
+
+    if "sales_revenue" in df.columns:
+        revenue_score = float(safe_normalize(df["sales_revenue"]).mean())
+        metrics["Revenue Score"] = round(revenue_score, 2)
+    else:
+        revenue_score = 0.5
+
+    if "margin" in df.columns:
+        margin_score = float(safe_normalize(df["margin"]).mean())
+        metrics["Margin Score"] = round(margin_score, 2)
+    else:
+        margin_score = 0.5
+
+    priority_score = 0.5 * revenue_score + 0.5 * margin_score
+    metrics["Priority Score"] = round(float(priority_score), 2)
+
+    if demand_change_pct > 20:
+        status = "Demand Spike"
+        recommendation = "Increase stock cover, accelerate replenishment, and monitor fast-moving SKUs closely."
+    elif demand_change_pct < -20:
+        status = "Demand Drop"
+        recommendation = "Reduce replenishment, review pricing/promotions, and avoid overstock on affected SKUs."
+    elif priority_score > 0.7:
+        status = "High-Value Stable"
+        recommendation = "Prioritize service levels and ensure availability for high-margin, high-revenue SKUs."
+    else:
+        status = "Stable"
+        recommendation = "Maintain current replenishment strategy and continue monitoring demand behaviour."
+
+    result.update({
+        "status": status,
+        "summary": "Tracks sales movement, revenue contribution, and profitability to support demand sensing and inventory prioritization.",
+        "metrics": metrics,
+        "recommendation": recommendation
+    })
+    return result
+
+
+def build_pc2_solution_module(df: pd.DataFrame) -> dict:
+    """
+    PC2: Supply Volatility & Risk
+    Uses lead_time_days, delivery_reliability, obsolescence_risk
+    """
+    result = {
+        "module": "PC2 - Supply Risk Intelligence",
+        "status": "Unavailable",
+        "summary": "Not enough supply-related variables found.",
+        "metrics": {},
+        "recommendation": "Upload fields such as lead_time_days, delivery_reliability, and obsolescence_risk."
+    }
+
+    available = [c for c in ["lead_time_days", "delivery_reliability", "obsolescence_risk"] if c in df.columns]
+    if len(available) < 2:
+        return result
+
+    metrics = {}
+
+    if "lead_time_days" in df.columns:
+        lead_time_score = float(safe_normalize(df["lead_time_days"]).mean())
+        metrics["Lead Time Risk"] = round(lead_time_score, 2)
+    else:
+        lead_time_score = 0.5
+
+    if "delivery_reliability" in df.columns:
+        reliability_risk = float(1 - safe_normalize(df["delivery_reliability"]).mean())
+        metrics["Delivery Risk"] = round(reliability_risk, 2)
+    else:
+        reliability_risk = 0.5
+
+    if "obsolescence_risk" in df.columns:
+        obsolescence_score = float(safe_normalize(df["obsolescence_risk"]).mean())
+        metrics["Obsolescence Risk"] = round(obsolescence_score, 2)
+    else:
+        obsolescence_score = 0.5
+
+    supplier_risk_score = (
+        0.4 * lead_time_score +
+        0.4 * reliability_risk +
+        0.2 * obsolescence_score
+    )
+    metrics["Supplier Risk Score"] = round(float(supplier_risk_score), 2)
+
+    if supplier_risk_score > 0.7:
+        status = "High Supply Risk"
+        recommendation = "Trigger supplier review, increase safety stock, and activate contingency sourcing."
+    elif supplier_risk_score > 0.4:
+        status = "Moderate Supply Risk"
+        recommendation = "Monitor lead times closely, review replenishment timing, and prepare logistics alerts."
+    else:
+        status = "Stable Supply"
+        recommendation = "Current supply behaviour is stable; continue routine monitoring and maintain existing policy."
+
+    result.update({
+        "status": status,
+        "summary": "Assesses lead-time instability, delivery inconsistency, and inventory risk to support supply-side decisions.",
+        "metrics": metrics,
+        "recommendation": recommendation
+    })
+    return result
+
+
+def build_pc3_solution_module(df: pd.DataFrame, selected_pc_scores_monitor: np.ndarray) -> dict:
+    """
+    PC3: Operational Stability
+    Uses available operational fields if present, else falls back to PC score stability
+    """
+    result = {
+        "module": "PC3 - Operational Stability Intelligence",
+        "status": "Unavailable",
+        "summary": "Not enough operational variables found.",
+        "metrics": {},
+        "recommendation": "Upload fields such as inventory_turnover, fill_rate, service_level, order_cycle_time, or forecast_error."
+    }
+
+    available = [c for c in [
+        "inventory_turnover",
+        "fill_rate",
+        "service_level",
+        "order_cycle_time",
+        "forecast_error"
+    ] if c in df.columns]
+
+    metrics = {}
+
+    if len(selected_pc_scores_monitor) > 1:
+        pc_std = float(np.std(selected_pc_scores_monitor))
+        pc_mean_abs = float(np.mean(np.abs(selected_pc_scores_monitor)) + 1e-6)
+        stability_score = max(0.0, 1 - (pc_std / (pc_mean_abs + 1e-6)))
+    else:
+        stability_score = 0.5
+
+    metrics["PC Stability Score"] = round(stability_score, 2)
+
+    if available:
+        op_scores = []
+        for col in available:
+            norm = safe_normalize(df[col])
+
+            if col in ["fill_rate", "service_level", "inventory_turnover"]:
+                score = float(1 - norm.mean())
+            else:
+                score = float(norm.mean())
+            op_scores.append(score)
+
+        operational_risk = float(np.mean(op_scores))
+        metrics["Operational Risk"] = round(operational_risk, 2)
+    else:
+        operational_risk = 1 - stability_score
+
+    if operational_risk > 0.7:
+        status = "Operationally Unstable"
+        recommendation = "Investigate recurring inefficiencies, review planning discipline, and improve execution controls."
+    elif operational_risk > 0.4:
+        status = "Moderate Instability"
+        recommendation = "Monitor service-level trends and forecast accuracy; improve process consistency."
+    else:
+        status = "Operationally Stable"
+        recommendation = "Operations appear stable; continue monitoring and maintain execution controls."
+
+    result.update({
+        "status": status,
+        "summary": "Tracks process consistency and execution stability using operational fields or PCA score stability as a fallback.",
+        "metrics": metrics,
+        "recommendation": recommendation
+    })
+    return result
+
+
+# -----------------------------
 # Sidebar
 # -----------------------------
 st.sidebar.title("PCA Retail Monitoring")
@@ -345,6 +559,19 @@ pc_info = pc_business_map.get(selected_pc, {
     "issue": "Deviation indicates a change in behaviour that should be investigated.",
     "action": "Review the highest contributing variables and take corrective action."
 })
+
+# -----------------------------
+# Build AI solution modules
+# -----------------------------
+pc1_module = build_pc1_solution_module(df)
+pc2_module = build_pc2_solution_module(df)
+pc3_module = build_pc3_solution_module(df, selected_pc_scores_monitor)
+
+solution_modules = {
+    "PC1": pc1_module,
+    "PC2": pc2_module,
+    "PC3": pc3_module
+}
 
 # -----------------------------
 # Residuals
@@ -625,47 +852,97 @@ with tab3:
             "The business layer converts anomaly detection outputs into practical inventory and supply chain actions."
         )
 
-        st.markdown("---")
-        st.markdown("## AI Solution Recommendations")
+    st.markdown("---")
+    st.markdown("## AI Solution Modules")
 
-        if selected_pc == "PC1":
-            recommendations = [
-                "Use **AI-driven demand sensing** to detect sudden sales spikes or drops early.",
-                "Apply **dynamic pricing and replenishment optimization** for high-revenue SKUs.",
-                "Use **profitability-aware inventory planning** to prioritize high-margin products.",
-                "Combine anomaly detection with **sales forecasting models** for proactive stock planning."
-            ]
-        elif selected_pc == "PC2":
-            recommendations = [
-                "Use **supplier risk scoring models** to identify unstable vendors early.",
-                "Apply **lead-time prediction models** to improve replenishment reliability.",
-                "Use **stockout risk prediction** to strengthen safety stock planning.",
-                "Deploy **real-time logistics alerts** when supply behaviour becomes unstable."
-            ]
-        elif selected_pc == "PC3":
-            recommendations = [
-                "Use **process stability monitoring models** to detect recurring execution inefficiencies.",
-                "Apply **service-level prediction models** to anticipate operational degradation.",
-                "Use **forecast error monitoring** to improve planning accuracy.",
-                "Deploy **AI-based operational dashboards** for continuous execution control."
-            ]
-        else:
-            recommendations = [
-                "Use predictive monitoring models to detect anomalies early.",
-                "Apply AI-based dashboards for decision support.",
-                "Integrate anomaly detection with forecasting and inventory planning."
-            ]
+    with st.expander("PC1 - Demand & Profitability Optimization", expanded=(selected_pc == "PC1")):
+        st.write(f"**Status:** {pc1_module['status']}")
+        st.write(f"**Summary:** {pc1_module['summary']}")
+        if pc1_module["metrics"]:
+            st.dataframe(
+                pd.DataFrame(
+                    list(pc1_module["metrics"].items()),
+                    columns=["Metric", "Value"]
+                ),
+                use_container_width=True
+            )
+        st.success(f"**Recommendation:** {pc1_module['recommendation']}")
 
-        for rec in recommendations:
-            st.markdown(f"- {rec}")
+    with st.expander("PC2 - Supply Risk Intelligence", expanded=(selected_pc == "PC2")):
+        st.write(f"**Status:** {pc2_module['status']}")
+        st.write(f"**Summary:** {pc2_module['summary']}")
+        if pc2_module["metrics"]:
+            st.dataframe(
+                pd.DataFrame(
+                    list(pc2_module["metrics"].items()),
+                    columns=["Metric", "Value"]
+                ),
+                use_container_width=True
+            )
+        st.success(f"**Recommendation:** {pc2_module['recommendation']}")
 
-        st.download_button(
-            "Download Monitoring Results",
-            data=results.to_csv(index=True).encode("utf-8"),
-            file_name="PCA_Monitoring_Results.csv",
-            mime="text/csv"
-        )
+    with st.expander("PC3 - Operational Stability Intelligence", expanded=(selected_pc == "PC3")):
+        st.write(f"**Status:** {pc3_module['status']}")
+        st.write(f"**Summary:** {pc3_module['summary']}")
+        if pc3_module["metrics"]:
+            st.dataframe(
+                pd.DataFrame(
+                    list(pc3_module["metrics"].items()),
+                    columns=["Metric", "Value"]
+                ),
+                use_container_width=True
+            )
+        st.success(f"**Recommendation:** {pc3_module['recommendation']}")
 
+    st.markdown("---")
+    st.markdown("## AI Solution Recommendations")
+
+    active_module = solution_modules.get(selected_pc)
+
+    st.write(f"### Recommended AI Focus for {selected_pc}")
+    st.write(f"**Module:** {active_module['module']}")
+    st.write(f"**Current Status:** {active_module['status']}")
+    st.write(f"**Recommended Next Step:** {active_module['recommendation']}")
+
+    if selected_pc == "PC1":
+        recommendations = [
+            "Use **AI-driven demand sensing** to detect sudden sales spikes or drops early.",
+            "Apply **dynamic pricing and replenishment optimization** for high-revenue SKUs.",
+            "Use **profitability-aware inventory planning** to prioritize high-margin products.",
+            "Combine anomaly detection with **sales forecasting models** for proactive stock planning."
+        ]
+    elif selected_pc == "PC2":
+        recommendations = [
+            "Use **supplier risk scoring models** to identify unstable vendors early.",
+            "Apply **lead-time prediction models** to improve replenishment reliability.",
+            "Use **stockout risk prediction** to strengthen safety stock planning.",
+            "Deploy **real-time logistics alerts** when supply behaviour becomes unstable."
+        ]
+    elif selected_pc == "PC3":
+        recommendations = [
+            "Use **process stability monitoring models** to detect recurring execution inefficiencies.",
+            "Apply **service-level prediction models** to anticipate operational degradation.",
+            "Use **forecast error monitoring** to improve planning accuracy.",
+            "Deploy **AI-based operational dashboards** for continuous execution control."
+        ]
+    else:
+        recommendations = [
+            "Use predictive monitoring models to detect anomalies early.",
+            "Apply AI-based dashboards for decision support.",
+            "Integrate anomaly detection with forecasting and inventory planning."
+        ]
+
+    for rec in recommendations:
+        st.markdown(f"- {rec}")
+
+    st.download_button(
+        "Download Monitoring Results",
+        data=results.to_csv(index=True).encode("utf-8"),
+        file_name="PCA_Monitoring_Results.csv",
+        mime="text/csv"
+    )
+
+    if business_df is not None:
         st.download_button(
             "Download Business Actions",
             data=business_df.to_csv(index=False).encode("utf-8"),
