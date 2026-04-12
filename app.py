@@ -325,20 +325,19 @@ if first_alarm is not None:
     business_df["Business_Action"] = business_df["Variable"].map(action_map).fillna("Investigate and monitor closely")
 
 # -----------------------------
-# Tabs
+# Tabs - Updated to 3 tabs only
 # -----------------------------
-tab1, tab2, tab3, tab4 = st.tabs([
-    "Overview",
-    "Real-Time Monitoring",
-    "Root Cause Analysis",
-    "Business Actions"
+tab1, tab2, tab3 = st.tabs([
+    "Technical Outcome",
+    "Analytical Outcome",
+    "Business Outcome"
 ])
 
 # -----------------------------
-# TAB 1: Overview
+# TAB 1: Technical Outcome
 # -----------------------------
 with tab1:
-    st.subheader("Overview")
+    st.subheader("Technical Outcome")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("PCA Components", A)
@@ -346,36 +345,7 @@ with tab1:
     c3.metric("Alarms Detected", int(results["ALARM"].sum()))
     c4.metric("Variables Monitored", len(vars_used))
 
-    st.markdown("### Technical Outcome")
-    st.write(
-        "The PCA model compresses the monitored retail variables into a small number of principal components "
-        "and continuously evaluates incoming data using **SPE, Hotelling T², and G₂**."
-    )
-
-    st.markdown("### Analytical Outcome")
-    st.write(
-        "When abnormal behaviour is detected, the system performs **contribution analysis** and "
-        "**reconstruction-based isolation** to identify the likely root-cause variable."
-    )
-
-    st.markdown("### Business Outcome")
-    st.write(
-        "The app converts technical anomaly signals into **business meaning and recommended actions**, "
-        "helping users respond proactively to demand spikes, supplier delays, and inventory risks."
-    )
-
-    st.markdown("### Variables Used")
-    st.write(vars_used)
-
-    st.markdown("### Monitoring Results Preview")
-    st.dataframe(results.head(), use_container_width=True)
-
-# -----------------------------
-# TAB 2: Real-Time Monitoring
-# -----------------------------
-with tab2:
-    st.subheader("Real-Time Monitoring")
-
+    st.markdown("### Monitoring Charts")
     fig_monitor = plot_monitoring_charts(
         results=results,
         spe_threshold=SPE_threshold,
@@ -384,7 +354,7 @@ with tab2:
     )
     st.pyplot(fig_monitor)
 
-    st.markdown("### Interpretation")
+    st.markdown("### Technical Interpretation")
     st.write(
         """
 - **SPE** identifies sudden abnormal deviations in demand or supply patterns  
@@ -400,13 +370,13 @@ with tab2:
         st.info("No alarms were triggered in the current monitoring data.")
 
 # -----------------------------
-# TAB 3: Root Cause Analysis
+# TAB 2: Analytical Outcome
 # -----------------------------
-with tab3:
-    st.subheader("Root Cause Analysis")
+with tab2:
+    st.subheader("Analytical Outcome")
 
     if first_alarm is None or contrib_df is None or recon_df is None:
-        st.info("No anomaly detected, so root cause analysis is not available.")
+        st.info("No anomaly detected, so analytical insights are not available.")
     else:
         c1, c2 = st.columns(2)
 
@@ -436,11 +406,17 @@ with tab3:
 
         st.info(f"Most likely root-cause variable: **{contrib_df.iloc[0]['Variable']}**")
 
+        st.markdown("### Analytical Summary")
+        st.write(
+            "The analytical layer explains what caused the anomaly by identifying the highest contributing variable "
+            "and validating it through reconstruction-based isolation."
+        )
+
 # -----------------------------
-# TAB 4: Business Actions
+# TAB 3: Business Outcome
 # -----------------------------
-with tab4:
-    st.subheader("Business Actions")
+with tab3:
+    st.subheader("Business Outcome")
 
     if first_alarm is None or business_df is None:
         st.info("No business action required because no anomaly was detected.")
@@ -454,10 +430,24 @@ with tab4:
         st.warning(f"Primary issue detected: **{top_issue}**")
         st.success(f"Recommended action for **{top_var}**: **{top_action}**")
 
-        st.markdown("### Action Summary")
+        st.markdown("### Business Summary")
         st.write(
-            "The app transforms anomaly detection outputs into actionable guidance for inventory and supply chain teams."
+            "The business layer converts anomaly detection outputs into practical inventory and supply chain actions."
         )
+
+        st.markdown("---")
+        st.markdown("## AI Solution Recommendations")
+
+        recommendations = [
+            "Use **predictive replenishment models** to dynamically adjust stock during abnormal demand spikes.",
+            "Apply **supplier risk scoring** when lead time or delivery reliability contributes strongly to anomalies.",
+            "Enable **real-time alerting dashboards** for operations, procurement, and inventory teams.",
+            "Use **root-cause explanation modules** to prioritize investigation on the highest contributing variable.",
+            "Integrate **forecasting + anomaly detection** to proactively manage stockouts, overstock, and supply disruptions."
+        ]
+
+        for rec in recommendations:
+            st.markdown(f"- {rec}")
 
         st.download_button(
             "Download Monitoring Results",
