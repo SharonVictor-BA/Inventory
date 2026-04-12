@@ -530,21 +530,21 @@ pc_meaning_map = {
 
 pc_business_map = {
     "PC1": {
-        "title": "Sales Intensity & Profitability",
+        "title": "Demand Intelligence",
         "meaning": "This component reflects sales performance, revenue generation, and product profitability.",
         "focus_variables": pc_available_variables.get("PC1", []),
         "issue": "Large deviation suggests abnormal sales movement, unusual profitability shifts, or demand spikes/drops.",
         "action": "Review stock allocation, pricing strategy, and replenishment planning for high-impact SKUs."
     },
     "PC2": {
-        "title": "Supply Volatility & Risk",
+        "title": "Supply Intelligence",
         "meaning": "This component reflects supplier delay, delivery inconsistency, and inventory risk exposure.",
         "focus_variables": pc_available_variables.get("PC2", []),
         "issue": "Large deviation suggests supply instability, logistics disruption, or rising stockout/obsolescence risk.",
         "action": "Review lead times, supplier performance, safety stock policy, and contingency sourcing plans."
     },
     "PC3": {
-        "title": "Operational Stability",
+        "title": "Operational Intelligence",
         "meaning": "This component reflects the consistency and efficiency of inventory operations and execution.",
         "focus_variables": pc_available_variables.get("PC3", []),
         "issue": "Large deviation suggests operational instability, process inefficiency, or recurring execution issues.",
@@ -667,12 +667,15 @@ if first_alarm is not None:
     business_df["Business_Action"] = business_df["Variable"].map(action_map).fillna("Investigate and monitor closely")
 
 # -----------------------------
-# Tabs - 3 tabs only
+# Tabs
 # -----------------------------
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Technical Outcome",
     "Analytical Outcome",
-    "Business Outcome"
+    "Business Outcome",
+    "Inputs",
+    "Intelligence Layers",
+    "Outputs"
 ])
 
 # -----------------------------
@@ -949,3 +952,131 @@ with tab3:
             file_name="PCA_Business_Actions.csv",
             mime="text/csv"
         )
+
+# -----------------------------
+# TAB 4: Inputs
+# -----------------------------
+with tab4:
+    st.subheader("Inputs")
+    st.caption("End-to-End Integrated Solution")
+
+    st.markdown("### Input Data Sources")
+    st.write(
+        "The solution begins by combining multiple retail data sources into a unified analytics pipeline."
+    )
+
+    input_data = pd.DataFrame({
+        "Input Category": [
+            "Retail Transaction Data",
+            "Inventory Data",
+            "Supplier Data",
+            "Operational Data"
+        ],
+        "Description": [
+            "Sales quantity, sales revenue, pricing, demand behaviour",
+            "Inventory levels, slow-moving stock, obsolescence signals",
+            "Lead time, delivery reliability, supplier-related risk indicators",
+            "Execution quality, process consistency, operational performance"
+        ]
+    })
+
+    st.dataframe(input_data, use_container_width=True)
+
+    st.markdown("### Current Dataset Variables Used")
+    st.write(vars_used)
+
+    st.info(
+        "These inputs provide the raw signals needed to build PCA-based monitoring, "
+        "risk detection, and business decision support."
+    )
+
+# -----------------------------
+# TAB 5: Intelligence Layers
+# -----------------------------
+with tab5:
+    st.subheader("Intelligence Layers")
+    st.caption("End-to-End Integrated Solution")
+
+    st.markdown("### PCA-Driven Intelligence Architecture")
+    st.write(
+        "The integrated solution is structured into three intelligence layers, each aligned to one principal component."
+    )
+
+    intelligence_df = pd.DataFrame({
+        "Layer": ["PC1", "PC2", "PC3"],
+        "Intelligence Type": [
+            "Demand Intelligence",
+            "Supply Intelligence",
+            "Operational Intelligence"
+        ],
+        "Focus": [
+            "Sales intensity, revenue behaviour, demand shifts",
+            "Lead-time instability, supply volatility, supplier risk",
+            "Delivery reliability, execution consistency, operational control"
+        ],
+        "Example Use Cases": [
+            "Demand sensing, pricing support, replenishment prioritization",
+            "Supplier risk scoring, stockout risk prediction, logistics alerts",
+            "Process stability monitoring, service control, execution dashboards"
+        ]
+    })
+
+    st.dataframe(intelligence_df, use_container_width=True)
+
+    st.markdown("### Active Intelligence Based on Selected PC")
+    st.success(
+        f"Selected PC: **{selected_pc}** → "
+        f"**{pc_business_map.get(selected_pc, {}).get('title', 'Selected Intelligence Layer')}**"
+    )
+
+    st.write(f"**Meaning:** {pc_info['meaning']}")
+    st.write(f"**Issue if abnormal:** {pc_info['issue']}")
+    st.write(f"**Recommended action:** {pc_info['action']}")
+
+# -----------------------------
+# TAB 6: Outputs
+# -----------------------------
+with tab6:
+    st.subheader("Outputs")
+    st.caption("End-to-End Integrated Solution")
+
+    st.markdown("### Solution Outputs")
+    st.write(
+        "The integrated solution converts input data and intelligence layers into decision-ready outputs."
+    )
+
+    outputs_df = pd.DataFrame({
+        "Output": [
+            "Anomaly Alerts",
+            "Predicted Risk",
+            "Prioritized SKUs",
+            "Recommended Business Actions"
+        ],
+        "Description": [
+            "Real-time alerts when SPE, T², or G₂ exceed thresholds",
+            "Risk interpretation from demand, supply, or operational signals",
+            "Identification of high-impact SKUs needing attention",
+            "Recommended actions for inventory, supplier, and operational control"
+        ]
+    })
+
+    st.dataframe(outputs_df, use_container_width=True)
+
+    st.markdown("### Live Output Summary")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Anomaly Alerts", int(results["ALARM"].sum()))
+    c2.metric("Selected PC", selected_pc)
+    c3.metric("Variance Explained (%)", round(selected_pc_variance, 2))
+
+    if business_df is not None and not business_df.empty:
+        st.markdown("### Top Business Output")
+        top_var = business_df.iloc[0]["Variable"]
+        top_issue = business_df.iloc[0]["Issue_Detected"]
+        top_action = business_df.iloc[0]["Business_Action"]
+
+        st.warning(f"Top issue detected: **{top_issue}**")
+        st.success(f"Recommended action: **{top_action}**")
+        st.info(f"Priority variable: **{top_var}**")
+    else:
+        st.info("No business output available because no anomaly was detected.")
