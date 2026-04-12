@@ -145,10 +145,6 @@ def safe_normalize(series: pd.Series) -> pd.Series:
 
 
 def build_pc1_solution_module(df: pd.DataFrame) -> dict:
-    """
-    PC1: Sales Intensity & Profitability
-    Uses sales_qty, sales_revenue, margin if available
-    """
     result = {
         "module": "PC1 - Demand & Profitability Optimization",
         "status": "Unavailable",
@@ -214,10 +210,6 @@ def build_pc1_solution_module(df: pd.DataFrame) -> dict:
 
 
 def build_pc2_solution_module(df: pd.DataFrame) -> dict:
-    """
-    PC2: Supply Volatility & Risk
-    Uses lead_time_days, delivery_reliability, obsolescence_risk
-    """
     result = {
         "module": "PC2 - Supply Risk Intelligence",
         "status": "Unavailable",
@@ -277,10 +269,6 @@ def build_pc2_solution_module(df: pd.DataFrame) -> dict:
 
 
 def build_pc3_solution_module(df: pd.DataFrame, selected_pc_scores_monitor: np.ndarray) -> dict:
-    """
-    PC3: Operational Stability
-    Uses available operational fields if present, else falls back to PC score stability
-    """
     result = {
         "module": "PC3 - Operational Stability Intelligence",
         "status": "Unavailable",
@@ -621,6 +609,33 @@ results["ALARM"] = (
     (results["G2_alarm"] == 1)
 ).astype(int)
 
+# -----------------------------
+# Numeric monitoring summaries
+# -----------------------------
+monitor_n = len(results)
+
+spe_alarm_count = int(results["SPE_alarm"].sum())
+t2_alarm_count = int(results["T2_alarm"].sum())
+g2_alarm_count = int(results["G2_alarm"].sum())
+alarm_count = int(results["ALARM"].sum())
+
+spe_alarm_pct = round((spe_alarm_count / monitor_n) * 100, 2) if monitor_n > 0 else 0
+t2_alarm_pct = round((t2_alarm_count / monitor_n) * 100, 2) if monitor_n > 0 else 0
+g2_alarm_pct = round((g2_alarm_count / monitor_n) * 100, 2) if monitor_n > 0 else 0
+alarm_pct = round((alarm_count / monitor_n) * 100, 2) if monitor_n > 0 else 0
+
+max_spe = round(float(results["SPE"].max()), 3)
+max_t2 = round(float(results["T2"].max()), 3)
+max_g2 = round(float(results["G2"].max()), 3)
+
+mean_spe = round(float(results["SPE"].mean()), 3)
+mean_t2 = round(float(results["T2"].mean()), 3)
+mean_g2 = round(float(results["G2"].mean()), 3)
+
+spe_threshold_val = round(float(SPE_threshold), 3)
+t2_threshold_val = round(float(T2_threshold), 3)
+g2_threshold_val = round(float(G2_threshold), 3)
+
 alarm_points = results.index[results["ALARM"] == 1]
 first_alarm = alarm_points[0] if len(alarm_points) > 0 else None
 
@@ -665,6 +680,26 @@ if first_alarm is not None:
     business_df = contrib_df.copy()
     business_df["Issue_Detected"] = business_df["Variable"].map(business_map).fillna("Operational anomaly")
     business_df["Business_Action"] = business_df["Variable"].map(action_map).fillna("Investigate and monitor closely")
+
+# -----------------------------
+# Root-cause numeric summaries
+# -----------------------------
+top_contributor = None
+top_contribution_value = None
+top_contribution_pct = None
+
+top_recon_var = None
+top_error_reduction = None
+
+if contrib_df is not None and not contrib_df.empty:
+    top_contributor = contrib_df.iloc[0]["Variable"]
+    top_contribution_value = float(contrib_df.iloc[0]["Contribution"])
+    total_contribution = float(contrib_df["Contribution"].sum())
+    top_contribution_pct = round((top_contribution_value / total_contribution) * 100, 2) if total_contribution > 0 else 0
+
+if recon_df is not None and not recon_df.empty:
+    top_recon_var = recon_df.iloc[0]["Variable"]
+    top_error_reduction = round(float(recon_df.iloc[0]["Error_Reduction"]), 3)
 
 # -----------------------------
 # Tabs
@@ -724,14 +759,45 @@ with tab1:
         )
 
     st.markdown("### Technical Interpretation")
-    st.write(
-        """
-- **SPE** identifies sudden abnormal deviations in demand or supply patterns  
-- **T²** detects structural changes in overall system behaviour  
-- **G₂** provides robust detection of persistent and subtle anomalies  
-- **Alarm** confirms anomalies when detection indices exceed thresholds
+
+    if selected_pc == "PC1":
+        st.write(
+            f"""
+- **{selected_pc} explains {selected_pc_variance:.2f}% of total variance**, representing **sales intensity and profitability**
+- **SPE crossed its threshold {spe_alarm_count} times ({spe_alarm_pct}%)**, indicating sudden changes in demand or revenue behaviour
+- **T² crossed its threshold {t2_alarm_count} times ({t2_alarm_pct}%)**, showing structural shifts in customer demand patterns
+- **G₂ crossed its threshold {g2_alarm_count} times ({g2_alarm_pct}%)**, capturing persistent demand/profitability anomalies
+- The **overall alarm triggered {alarm_count} times ({alarm_pct}%)**, signalling potential revenue and replenishment risk
 """
-    )
+        )
+
+    elif selected_pc == "PC2":
+        st.write(
+            f"""
+- **{selected_pc} explains {selected_pc_variance:.2f}% of total variance**, representing **supply volatility and risk**
+- **SPE crossed its threshold {spe_alarm_count} times ({spe_alarm_pct}%)**, indicating sudden lead-time or delivery disruptions
+- **T² crossed its threshold {t2_alarm_count} times ({t2_alarm_pct}%)**, showing structural instability in supplier or logistics behaviour
+- **G₂ crossed its threshold {g2_alarm_count} times ({g2_alarm_pct}%)**, capturing persistent supply-side inefficiencies
+- The **overall alarm triggered {alarm_count} times ({alarm_pct}%)**, signalling elevated supplier and replenishment risk
+"""
+        )
+
+    elif selected_pc == "PC3":
+        st.write(
+            f"""
+- **{selected_pc} explains {selected_pc_variance:.2f}% of total variance**, representing **operational stability**
+- **SPE crossed its threshold {spe_alarm_count} times ({spe_alarm_pct}%)**, highlighting sudden execution breakdowns
+- **T² crossed its threshold {t2_alarm_count} times ({t2_alarm_pct}%)**, indicating structural inefficiencies in process behaviour
+- **G₂ crossed its threshold {g2_alarm_count} times ({g2_alarm_pct}%)**, capturing recurring operational inconsistencies
+- The **overall alarm triggered {alarm_count} times ({alarm_pct}%)**, signalling service or execution degradation
+"""
+        )
+
+    st.markdown("### Numeric Monitoring Summary")
+    c7, c8, c9 = st.columns(3)
+    c7.metric("Max SPE / Threshold", f"{max_spe} / {spe_threshold_val}")
+    c8.metric("Max T² / Threshold", f"{max_t2} / {t2_threshold_val}")
+    c9.metric("Max G₂ / Threshold", f"{max_g2} / {g2_threshold_val}")
 
     if first_alarm is not None:
         st.success(f"First alarm detected at monitoring index: {first_alarm}")
@@ -815,6 +881,19 @@ with tab2:
 
         st.info(f"Most likely root-cause variable: **{contrib_df.iloc[0]['Variable']}**")
 
+        st.markdown("### Analytical Interpretation")
+
+        if contrib_df is not None and recon_df is not None and top_contributor is not None:
+            st.write(
+                f"""
+- The **top contributing variable is `{top_contributor}`**, contributing **{top_contribution_pct}%** of total anomaly contribution
+- Reconstruction-based isolation confirms **`{top_recon_var}`** as the most likely root cause, with an **error reduction of {top_error_reduction}**
+- This means the anomaly is not random noise — it is primarily driven by a measurable change in a specific business variable
+"""
+            )
+        else:
+            st.info("No numerical analytical interpretation is available.")
+
         st.markdown("### Analytical Summary")
         st.write(
             "The analytical layer explains what caused the anomaly by identifying the highest contributing variable "
@@ -854,6 +933,35 @@ with tab3:
         st.write(
             "The business layer converts anomaly detection outputs into practical inventory and supply chain actions."
         )
+
+        st.markdown("### Value-Driven Interpretation")
+
+        if selected_pc == "PC1":
+            st.write(
+                f"""
+- **{alarm_count} anomaly alerts ({alarm_pct}%)** indicate revenue-impacting demand instability
+- The strongest anomaly driver is **`{top_contributor}`** with **{top_contribution_pct}% contribution**
+- This suggests a measurable sales/profitability issue that may affect stock availability and revenue capture
+"""
+            )
+
+        elif selected_pc == "PC2":
+            st.write(
+                f"""
+- **{alarm_count} anomaly alerts ({alarm_pct}%)** indicate material supply-side instability
+- The strongest anomaly driver is **`{top_contributor}`** with **{top_contribution_pct}% contribution**
+- This suggests measurable supplier/logistics risk that may affect replenishment continuity
+"""
+            )
+
+        elif selected_pc == "PC3":
+            st.write(
+                f"""
+- **{alarm_count} anomaly alerts ({alarm_pct}%)** indicate operational instability in the monitoring window
+- The strongest anomaly driver is **`{top_contributor}`** with **{top_contribution_pct}% contribution**
+- This suggests measurable execution risk that may reduce service consistency and control
+"""
+            )
 
     st.markdown("---")
     st.markdown("## AI Solution Modules")
@@ -1080,3 +1188,22 @@ with tab6:
         st.info(f"Priority variable: **{top_var}**")
     else:
         st.info("No business output available because no anomaly was detected.")
+
+    st.markdown("### Quantified Output Interpretation")
+
+    st.write(
+        f"""
+- Total monitoring points evaluated: **{monitor_n}**
+- Overall anomaly alerts triggered: **{alarm_count} ({alarm_pct}%)**
+- Selected component: **{selected_pc}**, explaining **{selected_pc_variance:.2f}%** of variance
+"""
+    )
+
+    if top_contributor is not None:
+        st.write(
+            f"""
+- Most influential variable: **{top_contributor}**
+- Contribution share: **{top_contribution_pct}%**
+- Reconstruction confirms strongest isolation on: **{top_recon_var}**
+"""
+        )
