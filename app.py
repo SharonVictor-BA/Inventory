@@ -71,7 +71,7 @@ st.sidebar.header("Filters")
 
 filtered_df = df.copy()
 
-# Date filter
+# Historical Date Filter - ONLY within dataset range
 if date_col:
     min_date = filtered_df[date_col].min().date()
     max_date = filtered_df[date_col].max().date()
@@ -85,6 +85,7 @@ if date_col:
 
     if isinstance(selected_date_range, tuple) and len(selected_date_range) == 2:
         start_date, end_date = selected_date_range
+
         filtered_df = filtered_df[
             (filtered_df[date_col].dt.date >= start_date) &
             (filtered_df[date_col].dt.date <= end_date)
@@ -242,32 +243,25 @@ future_upper_df = pd.DataFrame(
 # Future Dates
 # --------------------------------------------------
 if date_col:
-    last_date = filtered_df[date_col].max()
-    inferred_freq = pd.infer_freq(filtered_df[date_col].dropna())
+    st.subheader("Future Date Selection")
 
-    if inferred_freq is None:
-        inferred_freq = "W"
+    min_future_date = future_df["Date"].min().date()
+    max_future_date = future_df["Date"].max().date()
 
-    future_dates = pd.date_range(
-        start=last_date,
-        periods=future_steps + 1,
-        freq=inferred_freq
-    )[1:]
+    selected_future_date = st.date_input(
+        "Select Future Date for Prediction Insight",
+        value=min_future_date,
+        min_value=min_future_date,
+        max_value=max_future_date
+    )
 
-    future_df.insert(0, "Date", future_dates)
-    future_lower_df.insert(0, "Date", future_dates)
-    future_upper_df.insert(0, "Date", future_dates)
+    selected_future_row = future_df[
+        future_df["Date"].dt.date == selected_future_date
+    ]
 
-    current_values = filtered_df[[date_col] + features].tail(future_steps).reset_index(drop=True)
-    current_values.rename(columns={date_col: "Date"}, inplace=True)
-
-else:
-    future_df.insert(0, "Step", np.arange(1, future_steps + 1))
-    future_lower_df.insert(0, "Step", np.arange(1, future_steps + 1))
-    future_upper_df.insert(0, "Step", np.arange(1, future_steps + 1))
-
-    current_values = X.tail(future_steps).reset_index(drop=True)
-    current_values.insert(0, "Step", np.arange(1, future_steps + 1))
+    selected_future_anomaly = future_anomaly_df[
+        future_anomaly_df["Date"].dt.date == selected_future_date
+    ]
 
 # --------------------------------------------------
 # Monitoring Metrics
