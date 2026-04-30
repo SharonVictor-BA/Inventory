@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
@@ -15,22 +16,21 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("PCA-Based Retail Inventory Forecasting and Anomaly Monitoring")
+st.title("Smart Retail PCA Forecasting, Monitoring & Anomaly Detection")
 
 st.markdown("""
-This application uses **Principal Component Analysis (PCA)** to reduce complex retail inventory data into meaningful components.
-The system then uses these components for:
+This application uses **PCA-based intelligence** to analyse retail inventory behaviour.
 
-- **Future KPI prediction**
-- **PCA-based interpretation**
-- **Monitoring of abnormal behaviour**
-- **Anomaly detection and business recommendations**
-
-Although the dataset is historical, it is processed sequentially to simulate how a real-time monitoring system would behave when new data arrives.
+It supports:
+- Future KPI prediction
+- PCA interpretation
+- Monitoring using SPE, T² and G₂
+- Anomaly detection
+- Category and SKU-level business impact analysis
 """)
 
 # --------------------------------------------------
-# Upload Dataset
+# Upload Data
 # --------------------------------------------------
 uploaded_file = st.sidebar.file_uploader("Upload CSV Dataset", type=["csv"])
 
@@ -40,13 +40,64 @@ if uploaded_file is None:
 
 df = pd.read_csv(uploaded_file)
 
-st.sidebar.success("Dataset uploaded successfully")
+# --------------------------------------------------
+# Detect Category, SKU and Date columns
+# --------------------------------------------------
+category_col = None
+sku_col = None
+date_col = None
 
-numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+for col in df.columns:
+    lower_col = col.lower()
 
-if len(numeric_cols) < 3:
-    st.error("Dataset must contain at least 3 numeric columns.")
+    if category_col is None and "category" in lower_col:
+        category_col = col
+
+    if sku_col is None and ("sku" in lower_col or "item" in lower_col or "product" in lower_col):
+        sku_col = col
+
+    if date_col is None and "date" in lower_col:
+        date_col = col
+
+if date_col:
+    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+    df = df.sort_values(date_col)
+
+# --------------------------------------------------
+# Sidebar Filters
+# --------------------------------------------------
+st.sidebar.header("Filters")
+
+filtered_df = df.copy()
+
+if category_col:
+    category_options = ["All"] + sorted(filtered_df[category_col].dropna().astype(str).unique().tolist())
+    selected_category = st.sidebar.selectbox("Select Category", category_options)
+
+    if selected_category != "All":
+        filtered_df = filtered_df[filtered_df[category_col].astype(str) == selected_category]
+else:
+    st.sidebar.info("No Category column found.")
+
+if sku_col:
+    sku_options = ["All"] + sorted(filtered_df[sku_col].dropna().astype(str).unique().tolist())
+    selected_sku = st.sidebar.selectbox("Select SKU_ID", sku_options)
+
+    if selected_sku != "All":
+        filtered_df = filtered_df[filtered_df[sku_col].astype(str) == selected_sku]
+else:
+    st.sidebar.info("No SKU_ID / Item / Product column found.")
+
+if filtered_df.empty:
+    st.error("No records available for the selected filters.")
     st.stop()
+
+st.sidebar.success(f"Filtered records: {len(filtered_df)}")
+
+# --------------------------------------------------
+# Numeric KPI Selection
+# --------------------------------------------------
+numeric_cols = filtered_df.select_dtypes(include=np.number).columns.tolist()
 
 default_features = [
     col for col in [
@@ -71,6 +122,11 @@ if len(features) < 3:
     st.error("Please select at least 3 numeric KPI features.")
     st.stop()
 
+impact_kpi = st.sidebar.selectbox(
+    "Select KPI for Top / Bottom SKU Impact",
+    features
+)
+
 future_steps = st.sidebar.slider(
     "Future Prediction Periods",
     min_value=5,
@@ -86,18 +142,19 @@ threshold_percentile = st.sidebar.slider(
 )
 
 # --------------------------------------------------
-# Data Preparation
+# Prepare Data
 # --------------------------------------------------
-X = df[features].copy()
+X = filtered_df[features].copy()
 X = X.apply(pd.to_numeric, errors="coerce")
 X = X.fillna(X.median())
+
+if len(X) < 10:
+    st.error("Not enough records after filtering. Please select a broader category or SKU.")
+    st.stop()
 
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
-# --------------------------------------------------
-# PCA
-# --------------------------------------------------
 n_components = min(3, len(features))
 pca = PCA(n_components=n_components)
 pcs = pca.fit_transform(X_scaled)
@@ -106,36 +163,86 @@ pc_names = [f"PC{i+1}" for i in range(n_components)]
 pc_df = pd.DataFrame(pcs, columns=pc_names)
 
 # --------------------------------------------------
-# Forecast PCs using ARIMA
+# Forecast PCs using ARIMA + Confidence Intervals
 # --------------------------------------------------
 pc_forecasts = {}
+pc_lower = {}
+pc_upper = {}
 
 for col in pc_df.columns:
     try:
         model = ARIMA(pc_df[col], order=(2, 1, 2))
         model_fit = model.fit()
-        forecast = model_fit.forecast(steps=future_steps)
-        pc_forecasts[col] = forecast.values
+
+        forecast_result = model_fit.get_forecast(steps=future_steps)
+        forecast_mean = forecast_result.predicted_mean
+        conf_int = forecast_result.conf_int(alpha=0.05)
+
+        pc_forecasts[col] = forecast_mean.values
+        pc_lower[col] = conf_int.iloc[:, 0].values
+        pc_upper[col] = conf_int.iloc[:, 1].values
+
     except Exception:
-        # fallback if ARIMA fails
         last_value = pc_df[col].iloc[-1]
+        std_value = pc_df[col].std()
+
         pc_forecasts[col] = np.repeat(last_value, future_steps)
+        pc_lower[col] = np.repeat(last_value - 1.96 * std_value, future_steps)
+        pc_upper[col] = np.repeat(last_value + 1.96 * std_value, future_steps)
 
 pc_forecast_df = pd.DataFrame(pc_forecasts)
+pc_lower_df = pd.DataFrame(pc_lower)
+pc_upper_df = pd.DataFrame(pc_upper)
 
-# Convert future PCs back to original KPI space
 future_scaled = pca.inverse_transform(pc_forecast_df)
 future_values = scaler.inverse_transform(future_scaled)
 future_df = pd.DataFrame(future_values, columns=features)
 
-# Current KPI values
-current_values = X.tail(future_steps).reset_index(drop=True)
+future_lower_scaled = pca.inverse_transform(pc_lower_df)
+future_upper_scaled = pca.inverse_transform(pc_upper_df)
 
-comparison_df = pd.DataFrame()
+future_lower_values = scaler.inverse_transform(future_lower_scaled)
+future_upper_values = scaler.inverse_transform(future_upper_scaled)
 
-for col in features:
-    comparison_df[f"Current_{col}"] = current_values[col]
-    comparison_df[f"Future_{col}"] = future_df[col]
+future_lower_df = pd.DataFrame(
+    future_lower_values,
+    columns=[f"{col}_Lower_95" for col in features]
+)
+
+future_upper_df = pd.DataFrame(
+    future_upper_values,
+    columns=[f"{col}_Upper_95" for col in features]
+)
+
+# --------------------------------------------------
+# Future Dates
+# --------------------------------------------------
+if date_col:
+    last_date = filtered_df[date_col].max()
+    inferred_freq = pd.infer_freq(filtered_df[date_col].dropna())
+
+    if inferred_freq is None:
+        inferred_freq = "W"
+
+    future_dates = pd.date_range(
+        start=last_date,
+        periods=future_steps + 1,
+        freq=inferred_freq
+    )[1:]
+
+    future_df.insert(0, "Date", future_dates)
+    future_lower_df.insert(0, "Date", future_dates)
+    future_upper_df.insert(0, "Date", future_dates)
+
+    current_values = filtered_df[[date_col] + features].tail(future_steps).reset_index(drop=True)
+    current_values.rename(columns={date_col: "Date"}, inplace=True)
+else:
+    future_df.insert(0, "Step", np.arange(1, future_steps + 1))
+    future_lower_df.insert(0, "Step", np.arange(1, future_steps + 1))
+    future_upper_df.insert(0, "Step", np.arange(1, future_steps + 1))
+
+    current_values = X.tail(future_steps).reset_index(drop=True)
+    current_values.insert(0, "Step", np.arange(1, future_steps + 1))
 
 # --------------------------------------------------
 # Monitoring Metrics
@@ -143,14 +250,11 @@ for col in features:
 X_hat = pca.inverse_transform(pcs)
 residual = X_scaled - X_hat
 
-# SPE
 spe = np.sum(residual ** 2, axis=1)
 
-# T2
 eigen_vals = pca.explained_variance_
 t2 = np.sum((pcs ** 2) / eigen_vals, axis=1)
 
-# G2 simplified combined index
 spe_norm = (spe - np.min(spe)) / (np.max(spe) - np.min(spe) + 1e-9)
 t2_norm = (t2 - np.min(t2)) / (np.max(t2) - np.min(t2) + 1e-9)
 g2 = 0.5 * spe_norm + 0.5 * t2_norm
@@ -176,13 +280,75 @@ results = pd.DataFrame({
 })
 
 # --------------------------------------------------
-# PCA Meaning
+# Future Anomaly Prediction
+# --------------------------------------------------
+future_pcs = pc_forecast_df.values
+future_scaled_reconstructed = pca.inverse_transform(future_pcs)
+future_residual = future_scaled - future_scaled_reconstructed
+
+future_spe = np.sum(future_residual ** 2, axis=1)
+future_t2 = np.sum((future_pcs ** 2) / eigen_vals, axis=1)
+
+future_spe_norm = (future_spe - np.min(spe)) / (np.max(spe) - np.min(spe) + 1e-9)
+future_t2_norm = (future_t2 - np.min(t2)) / (np.max(t2) - np.min(t2) + 1e-9)
+future_g2 = 0.5 * future_spe_norm + 0.5 * future_t2_norm
+
+future_anomaly = (
+    (future_spe > spe_threshold) |
+    (future_t2 > t2_threshold) |
+    (future_g2 > g2_threshold)
+)
+
+future_anomaly_df = pd.DataFrame({
+    "SPE_Forecast": future_spe,
+    "T2_Forecast": future_t2,
+    "G2_Forecast": future_g2,
+    "Future_Anomaly": future_anomaly.astype(int)
+})
+
+if date_col:
+    future_anomaly_df.insert(0, "Date", future_dates)
+else:
+    future_anomaly_df.insert(0, "Step", np.arange(1, future_steps + 1))
+
+# --------------------------------------------------
+# Top / Bottom SKU Business Impact
+# --------------------------------------------------
+def get_sku_impact_table(data, sku_col, category_col, kpi):
+    if sku_col is None:
+        return None, None
+
+    group_cols = [sku_col]
+    if category_col and category_col in data.columns:
+        group_cols.insert(0, category_col)
+
+    sku_summary = (
+        data.groupby(group_cols)[kpi]
+        .agg(["mean", "sum", "min", "max", "count"])
+        .reset_index()
+        .sort_values("mean", ascending=False)
+    )
+
+    top_3 = sku_summary.head(3)
+    bottom_3 = sku_summary.tail(3).sort_values("mean", ascending=True)
+
+    return top_3, bottom_3
+
+top_skus, bottom_skus = get_sku_impact_table(
+    filtered_df,
+    sku_col,
+    category_col,
+    impact_kpi
+)
+
+# --------------------------------------------------
+# PCA Explanation
 # --------------------------------------------------
 pc_explanation = {
     "PC1": {
         "name": "Demand Intelligence",
         "meaning": "Captures sales intensity, demand movement, revenue behaviour, and profitability signals.",
-        "business_value": "Helps identify demand spikes, drops, and revenue-impacting changes."
+        "business_value": "Helps identify demand spikes, demand drops, and revenue-impacting changes."
     },
     "PC2": {
         "name": "Supply Intelligence",
@@ -207,44 +373,108 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # ==================================================
-# TAB 1 — Prediction
+# TAB 1 — PREDICTION
 # ==================================================
 with tab1:
     st.header("Future KPI Prediction")
 
     st.markdown("""
-This tab forecasts future KPI values using the PCA-transformed data.  
-Instead of forecasting each KPI independently, the app forecasts the principal components and converts them back into KPI values.
+This tab forecasts future KPI values beyond the current dataset.
+The model forecasts PCA components first and then reconstructs future KPI values.
 """)
-
-    st.subheader("Current vs Future Prediction")
-
-    st.dataframe(comparison_df, use_container_width=True)
-
-    st.markdown("""
-**How to read this table:**  
-- `Current_` columns show recent historical KPI values  
-- `Future_` columns show predicted KPI values  
-- This helps compare whether future behaviour is expected to increase, decrease, or remain stable
-""")
-
-    st.subheader("Current vs Future KPI Trend")
 
     selected_kpi = st.selectbox("Select KPI to compare", features)
 
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(current_values[selected_kpi].values, label=f"Current {selected_kpi}", marker="o")
-    ax.plot(future_df[selected_kpi].values, label=f"Future {selected_kpi}", marker="o")
-    ax.set_title(f"Current vs Future Prediction: {selected_kpi}")
-    ax.set_xlabel("Time Step")
-    ax.set_ylabel(selected_kpi)
-    ax.legend()
-    ax.grid(True)
-    st.pyplot(fig)
+    x_current = current_values["Date"] if date_col else current_values["Step"]
+    x_future = future_df["Date"] if date_col else future_df["Step"]
 
-    st.info(
-        "This graph is useful because it visually compares recent historical behaviour with predicted future movement."
+    lower_col = f"{selected_kpi}_Lower_95"
+    upper_col = f"{selected_kpi}_Upper_95"
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=x_current,
+        y=current_values[selected_kpi],
+        mode="lines+markers",
+        name=f"Current {selected_kpi}"
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=x_future,
+        y=future_df[selected_kpi],
+        mode="lines+markers",
+        name=f"Future {selected_kpi}"
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=x_future,
+        y=future_upper_df[upper_col],
+        mode="lines",
+        line=dict(width=0),
+        showlegend=False,
+        name="Upper 95%"
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=x_future,
+        y=future_lower_df[lower_col],
+        mode="lines",
+        fill="tonexty",
+        line=dict(width=0),
+        name="95% Confidence Band"
+    ))
+
+    fig.update_layout(
+        title=f"Current vs Future Forecast with Confidence Band: {selected_kpi}",
+        xaxis_title="Date" if date_col else "Step",
+        yaxis_title=selected_kpi,
+        hovermode="x unified",
+        template="plotly_white"
     )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Future KPI Forecast Table")
+    forecast_display_df = pd.concat(
+        [
+            future_df,
+            future_lower_df.drop(columns=["Date"], errors="ignore").drop(columns=["Step"], errors="ignore"),
+            future_upper_df.drop(columns=["Date"], errors="ignore").drop(columns=["Step"], errors="ignore")
+        ],
+        axis=1
+    )
+    st.dataframe(forecast_display_df, use_container_width=True)
+
+    st.subheader("Future Anomaly Prediction")
+    st.dataframe(future_anomaly_df, use_container_width=True)
+
+    future_anomaly_count = int(future_anomaly_df["Future_Anomaly"].sum())
+
+    if future_anomaly_count > 0:
+        st.warning(f"{future_anomaly_count} future periods are predicted as potential anomalies.")
+    else:
+        st.success("No future anomaly is predicted in the selected forecast window.")
+
+    st.subheader("Top / Bottom SKU Impact")
+
+    if sku_col and top_skus is not None:
+        c1, c2 = st.columns(2)
+
+        with c1:
+            st.markdown(f"### Top 3 SKU_ID by High `{impact_kpi}`")
+            st.dataframe(top_skus, use_container_width=True)
+
+        with c2:
+            st.markdown(f"### Bottom 3 SKU_ID by Low `{impact_kpi}`")
+            st.dataframe(bottom_skus, use_container_width=True)
+
+        st.info(
+            "These tables show which SKUs have the highest and lowest business impact for the selected KPI "
+            "within the selected category/SKU filter."
+        )
+    else:
+        st.info("SKU_ID column not found, so Top / Bottom SKU impact table cannot be created.")
 
 # ==================================================
 # TAB 2 — PCA
@@ -253,8 +483,8 @@ with tab2:
     st.header("Principal Component Analysis")
 
     st.markdown("""
-PCA reduces multiple correlated retail KPIs into fewer meaningful components.
-This helps simplify the data while retaining the most important information.
+PCA reduces multiple retail KPIs into fewer meaningful components.
+This supports interpretation across demand, supply, and operational behaviour.
 """)
 
     variance_df = pd.DataFrame({
@@ -265,18 +495,20 @@ This helps simplify the data while retaining the most important information.
     st.subheader("PCA Variance Explained")
     st.dataframe(variance_df, use_container_width=True)
 
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.bar(variance_df["Principal Component"], variance_df["Variance Explained (%)"])
-    ax.set_title("Variance Explained by Principal Components")
-    ax.set_ylabel("Variance Explained (%)")
-    ax.grid(axis="y")
-    st.pyplot(fig)
-
-    st.info(
-        "This graph is necessary because it shows how much information each principal component captures from the original dataset."
+    fig_bar = go.Figure()
+    fig_bar.add_trace(go.Bar(
+        x=variance_df["Principal Component"],
+        y=variance_df["Variance Explained (%)"]
+    ))
+    fig_bar.update_layout(
+        title="Variance Explained by PCA Components",
+        xaxis_title="Principal Component",
+        yaxis_title="Variance Explained (%)",
+        template="plotly_white"
     )
+    st.plotly_chart(fig_bar, use_container_width=True)
 
-    st.subheader("Explanation of Principal Components")
+    st.subheader("PCA Component Meaning")
 
     for pc in pc_names:
         info = pc_explanation.get(pc)
@@ -287,81 +519,82 @@ This helps simplify the data while retaining the most important information.
 - **Business Value:** {info['business_value']}
 """)
 
-    st.subheader("PCA Scatter Plot")
-
     if n_components >= 2:
-        fig, ax = plt.subplots(figsize=(8, 5))
-        ax.scatter(pc_df["PC1"], pc_df["PC2"], alpha=0.6)
-        ax.set_xlabel("PC1")
-        ax.set_ylabel("PC2")
-        ax.set_title("PCA Projection: PC1 vs PC2")
-        ax.grid(True)
-        st.pyplot(fig)
+        st.subheader("PCA Scatter Plot")
 
-        st.info(
-            "This graph is useful because it shows how observations are distributed in reduced PCA space."
+        fig_scatter = go.Figure()
+        fig_scatter.add_trace(go.Scatter(
+            x=pc_df["PC1"],
+            y=pc_df["PC2"],
+            mode="markers",
+            marker=dict(size=7),
+            name="Observations"
+        ))
+
+        fig_scatter.update_layout(
+            title="PCA Projection: PC1 vs PC2",
+            xaxis_title="PC1",
+            yaxis_title="PC2",
+            template="plotly_white"
         )
 
+        st.plotly_chart(fig_scatter, use_container_width=True)
+
 # ==================================================
-# TAB 3 — Monitoring
+# TAB 3 — MONITORING
 # ==================================================
 with tab3:
     st.header("PCA-Based Monitoring")
 
     st.markdown("""
-This tab tracks how the system behaves over time using PCA-based monitoring indices.
-The monitoring signals help identify whether the retail system is behaving normally or starting to deviate.
+This tab tracks PCA-based monitoring signals.
+The threshold lines separate normal behaviour from potential abnormal behaviour.
 """)
 
-    fig, ax = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+    fig_monitor = go.Figure()
 
-    ax[0].plot(results["SPE"], label="SPE")
-    ax[0].axhline(spe_threshold, linestyle="--", label="SPE Threshold")
-    ax[0].set_title("SPE Monitoring")
-    ax[0].legend()
-    ax[0].grid(True)
+    fig_monitor.add_trace(go.Scatter(
+        y=results["SPE"],
+        mode="lines",
+        name="SPE"
+    ))
 
-    ax[1].plot(results["T2"], label="T²")
-    ax[1].axhline(t2_threshold, linestyle="--", label="T² Threshold")
-    ax[1].set_title("Hotelling T² Monitoring")
-    ax[1].legend()
-    ax[1].grid(True)
+    fig_monitor.add_trace(go.Scatter(
+        y=results["T2"],
+        mode="lines",
+        name="T²"
+    ))
 
-    ax[2].plot(results["G2"], label="G2")
-    ax[2].axhline(g2_threshold, linestyle="--", label="G2 Threshold")
-    ax[2].set_title("G2 Monitoring")
-    ax[2].legend()
-    ax[2].grid(True)
+    fig_monitor.add_trace(go.Scatter(
+        y=results["G2"],
+        mode="lines",
+        name="G₂"
+    ))
 
-    plt.tight_layout()
-    st.pyplot(fig)
-
-    st.subheader("Graph Explanation")
-
-    st.markdown("""
-- **SPE** detects sudden deviation from normal behaviour  
-- **T²** detects structural shifts in the PCA space  
-- **G2** captures persistent or subtle anomalies  
-- The threshold line separates normal behaviour from abnormal behaviour  
-""")
-
-    st.info(
-        "These graphs are necessary because they show when the system starts moving outside expected behaviour."
+    fig_monitor.update_layout(
+        title="PCA Monitoring Metrics: SPE, T² and G₂",
+        xaxis_title="Index",
+        yaxis_title="Monitoring Score",
+        hovermode="x unified",
+        template="plotly_white"
     )
 
+    st.plotly_chart(fig_monitor, use_container_width=True)
+
+    st.markdown("""
+### Graph Explanation
+- **SPE** detects sudden deviations from normal behaviour
+- **T²** detects structural shifts in PCA space
+- **G₂** captures persistent or subtle anomalies
+""")
+
 # ==================================================
-# TAB 4 — Anomaly Detection
+# TAB 4 — ANOMALY DETECTION
 # ==================================================
 with tab4:
     st.header("Anomaly Detection and AI Recommendations")
 
-    st.markdown("""
-This tab converts monitoring signals into anomaly alerts.
-If SPE, T², or G2 crosses its threshold, the observation is marked as abnormal.
-""")
-
     c1, c2, c3, c4 = st.columns(4)
-
     c1.metric("Total Records", len(results))
     c2.metric("Anomalies Detected", int(results["Anomaly"].sum()))
     c3.metric("Anomaly Rate (%)", round(results["Anomaly"].mean() * 100, 2))
@@ -370,23 +603,27 @@ If SPE, T², or G2 crosses its threshold, the observation is marked as abnormal.
     st.subheader("Anomaly Detection Results")
     st.dataframe(results, use_container_width=True)
 
-    st.subheader("Anomaly Alarm Graph")
+    fig_alarm = go.Figure()
 
-    fig, ax = plt.subplots(figsize=(12, 4))
-    ax.plot(results["Anomaly"], drawstyle="steps-post")
-    ax.set_title("Alarm Trigger: 0 = Normal, 1 = Anomaly")
-    ax.set_xlabel("Index")
-    ax.set_ylabel("Alarm")
-    ax.grid(True)
-    st.pyplot(fig)
+    fig_alarm.add_trace(go.Scatter(
+        y=results["Anomaly"],
+        mode="lines+markers",
+        name="Alarm",
+        line_shape="hv"
+    ))
 
-    st.info(
-        "This graph is necessary because it clearly shows when the system triggers an anomaly alarm."
+    fig_alarm.update_layout(
+        title="Alarm Trigger: 0 = Normal, 1 = Anomaly",
+        xaxis_title="Index",
+        yaxis_title="Alarm",
+        template="plotly_white"
     )
 
-    st.subheader("AI Recommendations")
+    st.plotly_chart(fig_alarm, use_container_width=True)
 
     anomaly_rate = results["Anomaly"].mean() * 100
+
+    st.subheader("AI Recommendations")
 
     if anomaly_rate > 20:
         st.warning("""
@@ -405,7 +642,7 @@ Moderate anomaly rate detected.
 
 Recommended actions:
 - Monitor high-risk KPIs closely
-- Review top contributing demand and supply variables
+- Review demand and supply-related drivers
 - Validate replenishment planning assumptions
 - Track recurring abnormal periods
 """)
@@ -417,14 +654,4 @@ Recommended actions:
 - Continue routine monitoring
 - Maintain current inventory strategy
 - Use forecasts for proactive replenishment planning
-""")
-
-    st.markdown("""
-### Business Interpretation
-
-The anomaly detection layer supports:
-- early warning of demand or supply instability
-- identification of abnormal KPI behaviour
-- proactive inventory and supplier decisions
-- improved business decision support
 """)
