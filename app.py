@@ -18,7 +18,7 @@ st.set_page_config(
 st.title("Smart Retail PCA Forecasting, Monitoring & Anomaly Detection")
 
 st.markdown("""
-This application uses **PCA-based intelligence** to analyse retail inventory behaviour.
+This app uses **PCA-based intelligence** to analyse retail inventory behaviour.
 
 It supports:
 - Future KPI prediction with confidence bands
@@ -26,11 +26,11 @@ It supports:
 - Monitoring using SPE, T² and G₂
 - Future anomaly prediction
 - Category and SKU-level business impact analysis
-- AI-based business recommendations
+- AI-based recommendations
 """)
 
 # --------------------------------------------------
-# Upload Data
+# Upload Dataset
 # --------------------------------------------------
 uploaded_file = st.sidebar.file_uploader("Upload CSV Dataset", type=["csv"])
 
@@ -41,7 +41,7 @@ if uploaded_file is None:
 df = pd.read_csv(uploaded_file)
 
 # --------------------------------------------------
-# Detect Columns
+# Detect Key Columns
 # --------------------------------------------------
 category_col = None
 sku_col = None
@@ -71,7 +71,7 @@ st.sidebar.header("Filters")
 
 filtered_df = df.copy()
 
-# Historical Date Filter - ONLY within dataset range
+# Historical Date Filter
 if date_col:
     min_date = filtered_df[date_col].min().date()
     max_date = filtered_df[date_col].max().date()
@@ -91,11 +91,11 @@ if date_col:
             (filtered_df[date_col].dt.date <= end_date)
         ]
 else:
-    st.sidebar.info("No Date column found.")
+    st.sidebar.info("No Date column found. App will use future step numbers.")
 
-# Category filter
+# Category Filter
 if category_col:
-    category_options = ["All"] + sorted(filtered_df[category_col].dropna().astype(str).unique().tolist())
+    category_options = ["All"] + sorted(filtered_df[category_col].dropna().astype(str).unique())
     selected_category = st.sidebar.selectbox("Select Category", category_options)
 
     if selected_category != "All":
@@ -103,9 +103,9 @@ if category_col:
 else:
     st.sidebar.info("No Category column found.")
 
-# SKU filter
+# SKU Filter
 if sku_col:
-    sku_options = ["All"] + sorted(filtered_df[sku_col].dropna().astype(str).unique().tolist())
+    sku_options = ["All"] + sorted(filtered_df[sku_col].dropna().astype(str).unique())
     selected_sku = st.sidebar.selectbox("Select SKU_ID", sku_options)
 
     if selected_sku != "All":
@@ -174,7 +174,7 @@ X = X.apply(pd.to_numeric, errors="coerce")
 X = X.fillna(X.median())
 
 if len(X) < 10:
-    st.error("Not enough records after filtering. Please select a broader category, SKU, or date range.")
+    st.error("Not enough records after filtering. Please select broader filters.")
     st.stop()
 
 scaler = StandardScaler()
@@ -188,7 +188,7 @@ pc_names = [f"PC{i+1}" for i in range(n_components)]
 pc_df = pd.DataFrame(pcs, columns=pc_names)
 
 # --------------------------------------------------
-# Forecast PCs using ARIMA + Confidence Intervals
+# Forecast PCs using ARIMA
 # --------------------------------------------------
 pc_forecasts = {}
 pc_lower = {}
@@ -219,6 +219,7 @@ pc_forecast_df = pd.DataFrame(pc_forecasts)
 pc_lower_df = pd.DataFrame(pc_lower)
 pc_upper_df = pd.DataFrame(pc_upper)
 
+# Convert forecasted PCs back to original KPI space
 future_scaled = pca.inverse_transform(pc_forecast_df)
 future_values = scaler.inverse_transform(future_scaled)
 future_df = pd.DataFrame(future_values, columns=features)
@@ -240,28 +241,36 @@ future_upper_df = pd.DataFrame(
 )
 
 # --------------------------------------------------
-# Future Dates
+# Future Dates / Steps
 # --------------------------------------------------
 if date_col:
-    st.subheader("Future Date Selection")
+    last_date = filtered_df[date_col].max()
 
-    min_future_date = future_df["Date"].min().date()
-    max_future_date = future_df["Date"].max().date()
+    inferred_freq = pd.infer_freq(filtered_df[date_col].dropna())
 
-    selected_future_date = st.date_input(
-        "Select Future Date for Prediction Insight",
-        value=min_future_date,
-        min_value=min_future_date,
-        max_value=max_future_date
-    )
+    if inferred_freq is None:
+        inferred_freq = "W"
 
-    selected_future_row = future_df[
-        future_df["Date"].dt.date == selected_future_date
-    ]
+    future_dates = pd.date_range(
+        start=last_date,
+        periods=future_steps + 1,
+        freq=inferred_freq
+    )[1:]
 
-    selected_future_anomaly = future_anomaly_df[
-        future_anomaly_df["Date"].dt.date == selected_future_date
-    ]
+    future_df.insert(0, "Date", future_dates)
+    future_lower_df.insert(0, "Date", future_dates)
+    future_upper_df.insert(0, "Date", future_dates)
+
+    current_values = filtered_df[[date_col] + features].tail(future_steps).reset_index(drop=True)
+    current_values.rename(columns={date_col: "Date"}, inplace=True)
+
+else:
+    future_df.insert(0, "Step", np.arange(1, future_steps + 1))
+    future_lower_df.insert(0, "Step", np.arange(1, future_steps + 1))
+    future_upper_df.insert(0, "Step", np.arange(1, future_steps + 1))
+
+    current_values = X.tail(future_steps).reset_index(drop=True)
+    current_values.insert(0, "Step", np.arange(1, future_steps + 1))
 
 # --------------------------------------------------
 # Monitoring Metrics
@@ -325,19 +334,20 @@ future_anomaly_df = pd.DataFrame({
     "Future_Anomaly": future_anomaly.astype(int)
 })
 
-if date_col:
-    future_anomaly_df.insert(0, "Date", future_dates)
+if "Date" in future_df.columns:
+    future_anomaly_df.insert(0, "Date", future_df["Date"])
 else:
-    future_anomaly_df.insert(0, "Step", np.arange(1, future_steps + 1))
+    future_anomaly_df.insert(0, "Step", future_df["Step"])
 
 # --------------------------------------------------
-# Top / Bottom SKU Business Impact
+# Top / Bottom SKU Impact
 # --------------------------------------------------
 def get_sku_impact_table(data, sku_col, category_col, kpi):
     if sku_col is None:
         return None, None
 
     group_cols = [sku_col]
+
     if category_col and category_col in data.columns:
         group_cols.insert(0, category_col)
 
@@ -398,12 +408,12 @@ with tab1:
     st.header("Future KPI Prediction")
 
     st.markdown("""
-This tab forecasts KPI values beyond the current dataset.  
-The model forecasts PCA components first and then reconstructs the future KPI values.
+This tab forecasts future KPI values beyond the current dataset.  
+The model forecasts PCA components first and then reconstructs future KPI values.
 """)
 
-    # Future date selector
-    if date_col:
+    # Future Date or Step Selection
+    if "Date" in future_df.columns:
         st.subheader("Future Date Selection")
 
         min_future_date = future_df["Date"].min().date()
@@ -423,14 +433,27 @@ The model forecasts PCA components first and then reconstructs the future KPI va
         selected_future_anomaly = future_anomaly_df[
             future_anomaly_df["Date"].dt.date == selected_future_date
         ]
+
     else:
-        selected_future_row = future_df.head(1)
-        selected_future_anomaly = future_anomaly_df.head(1)
+        st.subheader("Future Step Selection")
+
+        selected_future_step = st.selectbox(
+            "Select Future Step for Prediction Insight",
+            future_df["Step"].tolist()
+        )
+
+        selected_future_row = future_df[
+            future_df["Step"] == selected_future_step
+        ]
+
+        selected_future_anomaly = future_anomaly_df[
+            future_anomaly_df["Step"] == selected_future_step
+        ]
 
     selected_kpi = st.selectbox("Select KPI to compare", features)
 
-    x_current = current_values["Date"] if date_col else current_values["Step"]
-    x_future = future_df["Date"] if date_col else future_df["Step"]
+    x_current = current_values["Date"] if "Date" in current_values.columns else current_values["Step"]
+    x_future = future_df["Date"] if "Date" in future_df.columns else future_df["Step"]
 
     lower_col = f"{selected_kpi}_Lower_95"
     upper_col = f"{selected_kpi}_Upper_95"
@@ -471,7 +494,7 @@ The model forecasts PCA components first and then reconstructs the future KPI va
 
     fig.update_layout(
         title=f"Current vs Future Forecast with Confidence Band: {selected_kpi}",
-        xaxis_title="Date" if date_col else "Step",
+        xaxis_title="Date" if "Date" in future_df.columns else "Future Step",
         yaxis_title=selected_kpi,
         hovermode="x unified",
         template="plotly_white"
@@ -484,7 +507,7 @@ The model forecasts PCA components first and then reconstructs the future KPI va
         "A wider band indicates higher uncertainty."
     )
 
-    st.subheader("Selected Future Date Prediction Summary")
+    st.subheader("Selected Future Prediction Summary")
 
     if not selected_future_row.empty:
         st.dataframe(selected_future_row, use_container_width=True)
@@ -493,11 +516,11 @@ The model forecasts PCA components first and then reconstructs the future KPI va
             future_alarm = int(selected_future_anomaly["Future_Anomaly"].iloc[0])
 
             if future_alarm == 1:
-                st.warning("Potential anomaly predicted for the selected future date.")
+                st.warning("Potential anomaly predicted for the selected future period.")
             else:
-                st.success("No anomaly predicted for the selected future date.")
+                st.success("No anomaly predicted for the selected future period.")
     else:
-        st.info("No prediction available for the selected future date.")
+        st.info("No prediction available for the selected future period.")
 
     st.subheader("Future KPI Forecast Table")
 
@@ -525,7 +548,7 @@ The model forecasts PCA components first and then reconstructs the future KPI va
 
     st.subheader("Future Anomaly Risk Graph")
 
-    x_future_anom = future_anomaly_df["Date"] if date_col else future_anomaly_df["Step"]
+    x_future_anom = future_anomaly_df["Date"] if "Date" in future_anomaly_df.columns else future_anomaly_df["Step"]
 
     fig_anom = go.Figure()
 
@@ -560,7 +583,7 @@ The model forecasts PCA components first and then reconstructs the future KPI va
 
     fig_anom.update_layout(
         title="Future Anomaly Prediction using Forecasted PCA Scores",
-        xaxis_title="Date" if date_col else "Future Step",
+        xaxis_title="Date" if "Date" in future_anomaly_df.columns else "Future Step",
         yaxis=dict(title="Anomaly Scores"),
         yaxis2=dict(
             title="Alarm",
@@ -574,7 +597,7 @@ The model forecasts PCA components first and then reconstructs the future KPI va
 
     st.plotly_chart(fig_anom, use_container_width=True)
 
-    st.subheader("AI Recommendations for Selected Future Date")
+    st.subheader("AI Recommendations for Selected Future Period")
 
     if not selected_future_row.empty:
         row = selected_future_row.iloc[0]
@@ -611,13 +634,13 @@ The model forecasts PCA components first and then reconstructs the future KPI va
                 recommendations.append("Obsolescence risk is expected to remain controlled.")
 
         if not selected_future_anomaly.empty and int(selected_future_anomaly["Future_Anomaly"].iloc[0]) == 1:
-            recommendations.append("Future anomaly risk detected. Review demand, supply, and operational KPIs before this date.")
+            recommendations.append("Future anomaly risk detected. Review demand, supply, and operational KPIs before this period.")
 
         if recommendations:
             for rec in recommendations:
                 st.markdown(f"- {rec}")
         else:
-            st.success("Future KPI behaviour looks stable. Continue routine monitoring and replenishment planning.")
+            st.success("Future KPI behaviour looks stable. Continue routine monitoring.")
 
     st.subheader("Top / Bottom SKU Impact")
 
@@ -632,10 +655,6 @@ The model forecasts PCA components first and then reconstructs the future KPI va
             st.markdown(f"### Bottom 3 SKU_ID by Low `{impact_kpi}`")
             st.dataframe(bottom_skus, use_container_width=True)
 
-        st.info(
-            "These tables show which SKUs have the highest and lowest business impact for the selected KPI "
-            "within the selected category, SKU, and date filters."
-        )
     else:
         st.info("SKU_ID column not found, so Top / Bottom SKU impact table cannot be created.")
 
