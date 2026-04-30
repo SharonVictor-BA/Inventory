@@ -839,3 +839,62 @@ Recommended actions:
 - Maintain current inventory strategy
 - Use forecasts for proactive replenishment planning
 """)
+    # --------------------------------------------------
+    # Forecast Graph Explanation and Observation
+    # --------------------------------------------------
+    st.subheader("Graph Explanation and Observations")
+
+    selected_future_mean = future_df[selected_kpi].mean()
+    selected_current_mean = current_values[selected_kpi].mean()
+
+    future_upper_mean = future_upper_df[upper_col].mean()
+    future_lower_mean = future_lower_df[lower_col].mean()
+    confidence_width = future_upper_mean - future_lower_mean
+
+    if selected_future_mean > selected_current_mean:
+        trend_text = "Future forecast is expected to increase compared to recent historical values."
+    elif selected_future_mean < selected_current_mean:
+        trend_text = "Future forecast is expected to decrease compared to recent historical values."
+    else:
+        trend_text = "Future forecast is expected to remain broadly stable."
+
+    if confidence_width > selected_future_mean * 0.5:
+        uncertainty_text = "The confidence band is wide, indicating higher uncertainty in the prediction."
+    else:
+        uncertainty_text = "The confidence band is relatively narrow, indicating more stable prediction confidence."
+
+    st.markdown(f"""
+### 📊 Current vs Future Forecast Interpretation
+
+**Current KPI Trend**
+- The blue line represents recent historical values for `{selected_kpi}`.
+- It shows how the KPI has behaved before the forecast period.
+
+**Future KPI Forecast**
+- The red line represents predicted future values for `{selected_kpi}`.
+- Average current value: **{selected_current_mean:.2f}**
+- Average future forecast: **{selected_future_mean:.2f}**
+
+**Confidence Band**
+- The shaded band represents the **95% confidence interval**.
+- Lower expected range: **{future_lower_mean:.2f}**
+- Upper expected range: **{future_upper_mean:.2f}**
+
+### 🔍 Observation
+
+- {trend_text}
+- {uncertainty_text}
+- A wider band means the model sees more possible variation in future behaviour.
+- Business users should consider both the forecast line and the confidence range before making inventory decisions.
+
+### 💼 Business Interpretation
+
+- If the KPI is demand or revenue related, use this forecast to plan stock availability.
+- If the KPI is lead time or delivery related, use it to assess supplier and logistics risk.
+- If the KPI is obsolescence related, use it to reduce excess stock or plan promotions.
+
+### ✅ Recommended Action
+
+Use this forecast as a **decision-support signal**, not as a fixed number.  
+Plan inventory using the forecast value, but prepare for risk using the confidence band.
+""")
