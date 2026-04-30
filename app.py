@@ -416,8 +416,11 @@ The model forecasts PCA components first and then reconstructs future KPI values
     if "Date" in future_df.columns:
         st.subheader("Future Date Selection")
 
-        min_future_date = future_df["Date"].min().date()
-        max_future_date = future_df["Date"].max().date()
+        future_df["Date_only"] = pd.to_datetime(future_df["Date"]).dt.date
+        future_anomaly_df["Date_only"] = pd.to_datetime(future_anomaly_df["Date"]).dt.date
+
+        min_future_date = future_df["Date_only"].min()
+        max_future_date = future_df["Date_only"].max()
 
         selected_future_date = st.date_input(
             "Select Future Date for Prediction Insight",
@@ -427,12 +430,12 @@ The model forecasts PCA components first and then reconstructs future KPI values
         )
 
         selected_future_row = future_df[
-            future_df["Date"].dt.date == selected_future_date
-        ]
+            future_df["Date_only"] == selected_future_date
+        ].drop(columns=["Date_only"], errors="ignore")
 
         selected_future_anomaly = future_anomaly_df[
-            future_anomaly_df["Date"].dt.date == selected_future_date
-        ]
+            future_anomaly_df["Date_only"] == selected_future_date
+        ].drop(columns=["Date_only"], errors="ignore")
 
     else:
         st.subheader("Future Step Selection")
@@ -502,10 +505,48 @@ The model forecasts PCA components first and then reconstructs future KPI values
 
     st.plotly_chart(fig, use_container_width=True)
 
-    st.info(
-        "The shaded confidence band shows the expected prediction range. "
-        "A wider band indicates higher uncertainty."
-    )
+    # Graph explanation under Prediction graph
+    selected_future_mean = future_df[selected_kpi].mean()
+    selected_current_mean = current_values[selected_kpi].mean()
+
+    future_upper_mean = future_upper_df[upper_col].mean()
+    future_lower_mean = future_lower_df[lower_col].mean()
+    confidence_width = future_upper_mean - future_lower_mean
+
+    if selected_future_mean > selected_current_mean:
+        trend_text = "Future forecast is expected to increase compared to recent historical values."
+    elif selected_future_mean < selected_current_mean:
+        trend_text = "Future forecast is expected to decrease compared to recent historical values."
+    else:
+        trend_text = "Future forecast is expected to remain broadly stable."
+
+    if confidence_width > abs(selected_future_mean) * 0.5:
+        uncertainty_text = "The confidence band is wide, indicating higher uncertainty in the prediction."
+    else:
+        uncertainty_text = "The confidence band is relatively narrow, indicating more stable prediction confidence."
+
+    st.markdown(f"""
+### Graph Insight
+
+This graph compares recent historical values with future predicted values for **{selected_kpi}**.
+
+**What it shows**
+- Blue line = recent historical KPI values
+- Red line = future predicted KPI values
+- Shaded area = 95% confidence band
+
+**AI Interpretation**
+- Average current value: **{selected_current_mean:.2f}**
+- Average future value: **{selected_future_mean:.2f}**
+- Forecast uncertainty range: **{future_lower_mean:.2f} to {future_upper_mean:.2f}**
+- {trend_text}
+- {uncertainty_text}
+
+**Business Meaning**
+- Use the forecast line for expected planning.
+- Use the confidence band for risk planning.
+- Wider band means higher uncertainty and greater need for buffer planning.
+""")
 
     st.subheader("Selected Future Prediction Summary")
 
@@ -526,7 +567,7 @@ The model forecasts PCA components first and then reconstructs future KPI values
 
     forecast_display_df = pd.concat(
         [
-            future_df,
+            future_df.drop(columns=["Date_only"], errors="ignore"),
             future_lower_df.drop(columns=["Date"], errors="ignore").drop(columns=["Step"], errors="ignore"),
             future_upper_df.drop(columns=["Date"], errors="ignore").drop(columns=["Step"], errors="ignore")
         ],
@@ -537,7 +578,10 @@ The model forecasts PCA components first and then reconstructs future KPI values
 
     st.subheader("Future Anomaly Prediction")
 
-    st.dataframe(future_anomaly_df, use_container_width=True)
+    st.dataframe(
+        future_anomaly_df.drop(columns=["Date_only"], errors="ignore"),
+        use_container_width=True
+    )
 
     future_anomaly_count = int(future_anomaly_df["Future_Anomaly"].sum())
 
@@ -597,37 +641,58 @@ The model forecasts PCA components first and then reconstructs future KPI values
 
     st.plotly_chart(fig_anom, use_container_width=True)
 
+    future_anomaly_rate = future_anomaly_df["Future_Anomaly"].mean() * 100
+
+    st.markdown(f"""
+### Graph Insight
+
+This graph predicts whether future periods are likely to behave normally or abnormally.
+
+**What it shows**
+- Future SPE, T², and G₂ values estimate future anomaly risk.
+- Future Alarm = 1 means potential abnormal behaviour.
+- Future Alarm = 0 means expected normal behaviour.
+
+**AI Interpretation**
+- Future anomaly periods detected: **{int(future_anomaly_df["Future_Anomaly"].sum())}**
+- Future anomaly rate: **{future_anomaly_rate:.2f}%**
+
+**Business Meaning**
+- If future anomaly risk is high, review demand, supply, and operational KPIs early.
+- Use this graph as an early-warning signal before actual disruption happens.
+""")
+
     st.subheader("AI Recommendations for Selected Future Period")
 
     if not selected_future_row.empty:
         row = selected_future_row.iloc[0]
         recommendations = []
 
-        if "sales_qty" in row and "sales_qty" in future_df.columns:
+        if "sales_qty" in row:
             if row["sales_qty"] > future_df["sales_qty"].mean():
                 recommendations.append("Demand is expected to be above average. Increase stock availability for high-demand SKUs.")
             else:
                 recommendations.append("Demand is expected to remain below or near average. Avoid unnecessary overstock.")
 
-        if "sales_revenue" in row and "sales_revenue" in future_df.columns:
+        if "sales_revenue" in row:
             if row["sales_revenue"] > future_df["sales_revenue"].mean():
                 recommendations.append("Revenue is expected to be strong. Prioritize high-value SKUs and avoid stockouts.")
             else:
                 recommendations.append("Revenue is not expected to exceed average. Review promotion or pricing opportunities.")
 
-        if "lead_time_days" in row and "lead_time_days" in future_df.columns:
+        if "lead_time_days" in row:
             if row["lead_time_days"] > future_df["lead_time_days"].mean():
                 recommendations.append("Lead time is expected to increase. Review supplier commitments and plan replenishment earlier.")
             else:
                 recommendations.append("Lead time is expected to remain stable. Continue normal replenishment planning.")
 
-        if "delivery_reliability" in row and "delivery_reliability" in future_df.columns:
+        if "delivery_reliability" in row:
             if row["delivery_reliability"] < future_df["delivery_reliability"].mean():
                 recommendations.append("Delivery reliability is expected to weaken. Monitor logistics risk and prepare backup options.")
             else:
                 recommendations.append("Delivery reliability looks stable. Maintain current logistics approach.")
 
-        if "obsolescence_risk" in row and "obsolescence_risk" in future_df.columns:
+        if "obsolescence_risk" in row:
             if row["obsolescence_risk"] > future_df["obsolescence_risk"].mean():
                 recommendations.append("Obsolescence risk is expected to rise. Reduce excess stock or consider promotions.")
             else:
@@ -692,6 +757,28 @@ This supports interpretation across demand, supply, and operational behaviour.
 
     st.plotly_chart(fig_bar, use_container_width=True)
 
+    total_variance = variance_df["Variance Explained (%)"].sum()
+    top_pc = variance_df.sort_values("Variance Explained (%)", ascending=False).iloc[0]
+
+    st.markdown(f"""
+### Graph Insight
+
+This graph shows how much information each principal component captures from the original KPI data.
+
+**What it shows**
+- PC1, PC2, and PC3 summarize the original KPI features.
+- Higher variance means the component explains more data behaviour.
+- Total variance retained: **{total_variance:.2f}%**
+
+**AI Interpretation**
+- The most influential component is **{top_pc["Principal Component"]}**, explaining **{top_pc["Variance Explained (%)"]:.2f}%** of the data pattern.
+
+**Business Meaning**
+- PC1 usually represents the strongest business driver.
+- PC2 and PC3 capture secondary supply and operational behaviour.
+- Together, the PCs simplify complex retail data into interpretable intelligence layers.
+""")
+
     st.subheader("PCA Component Meaning")
 
     for pc in pc_names:
@@ -723,6 +810,25 @@ This supports interpretation across demand, supply, and operational behaviour.
         )
 
         st.plotly_chart(fig_scatter, use_container_width=True)
+
+        st.markdown("""
+### Graph Insight
+
+This scatter plot shows observations projected into PCA space.
+
+**What it shows**
+- Each point represents one record after dimensionality reduction.
+- Points close together have similar KPI behaviour.
+- Points far away may indicate unusual patterns or different business behaviour.
+
+**AI Interpretation**
+- Spread in the plot indicates variation across demand, supply, or operational conditions.
+- Isolated points may require further investigation as potential anomalies.
+
+**Business Meaning**
+- Helps understand whether retail behaviour is stable or highly varied.
+- Supports early identification of unusual SKU or category patterns.
+""")
 
 # ==================================================
 # TAB 3 — MONITORING
@@ -765,11 +871,29 @@ The threshold lines separate normal behaviour from potential abnormal behaviour.
 
     st.plotly_chart(fig_monitor, use_container_width=True)
 
-    st.markdown("""
-### Graph Explanation
-- **SPE** detects sudden deviations from normal behaviour
-- **T²** detects structural shifts in PCA space
-- **G₂** captures persistent or subtle anomalies
+    spe_max = results["SPE"].max()
+    t2_max = results["T2"].max()
+    g2_max = results["G2"].max()
+
+    st.markdown(f"""
+### Graph Insight
+
+This graph tracks PCA monitoring scores over time.
+
+**What it shows**
+- **SPE** detects sudden deviations from normal behaviour.
+- **T²** detects structural changes in PCA space.
+- **G₂** captures persistent or subtle abnormal behaviour.
+
+**AI Interpretation**
+- Maximum SPE score: **{spe_max:.2f}**
+- Maximum T² score: **{t2_max:.2f}**
+- Maximum G₂ score: **{g2_max:.2f}**
+
+**Business Meaning**
+- Rising SPE may indicate demand or revenue shocks.
+- Rising T² may indicate supply or system-level shifts.
+- Rising G₂ may indicate recurring operational instability.
 """)
 
 # ==================================================
@@ -805,7 +929,28 @@ with tab4:
 
     st.plotly_chart(fig_alarm, use_container_width=True)
 
+    anomaly_count = int(results["Anomaly"].sum())
     anomaly_rate = results["Anomaly"].mean() * 100
+
+    st.markdown(f"""
+### Graph Insight
+
+This graph converts monitoring scores into simple anomaly alarms.
+
+**What it shows**
+- Alarm = 0 means normal behaviour.
+- Alarm = 1 means anomaly detected.
+- Alarm is triggered when SPE, T², or G₂ crosses the selected threshold.
+
+**AI Interpretation**
+- Total anomalies detected: **{anomaly_count}**
+- Anomaly rate: **{anomaly_rate:.2f}%**
+
+**Business Meaning**
+- Helps users quickly identify abnormal periods.
+- Supports faster action on demand, supply, or operational issues.
+- Converts technical monitoring into business-ready alerts.
+""")
 
     st.subheader("AI Recommendations")
 
@@ -838,63 +983,4 @@ Recommended actions:
 - Continue routine monitoring
 - Maintain current inventory strategy
 - Use forecasts for proactive replenishment planning
-""")
-    # --------------------------------------------------
-    # Forecast Graph Explanation and Observation
-    # --------------------------------------------------
-    st.subheader("Graph Explanation and Observations")
-
-    selected_future_mean = future_df[selected_kpi].mean()
-    selected_current_mean = current_values[selected_kpi].mean()
-
-    future_upper_mean = future_upper_df[upper_col].mean()
-    future_lower_mean = future_lower_df[lower_col].mean()
-    confidence_width = future_upper_mean - future_lower_mean
-
-    if selected_future_mean > selected_current_mean:
-        trend_text = "Future forecast is expected to increase compared to recent historical values."
-    elif selected_future_mean < selected_current_mean:
-        trend_text = "Future forecast is expected to decrease compared to recent historical values."
-    else:
-        trend_text = "Future forecast is expected to remain broadly stable."
-
-    if confidence_width > selected_future_mean * 0.5:
-        uncertainty_text = "The confidence band is wide, indicating higher uncertainty in the prediction."
-    else:
-        uncertainty_text = "The confidence band is relatively narrow, indicating more stable prediction confidence."
-
-    st.markdown(f"""
-### 📊 Current vs Future Forecast Interpretation
-
-**Current KPI Trend**
-- The blue line represents recent historical values for `{selected_kpi}`.
-- It shows how the KPI has behaved before the forecast period.
-
-**Future KPI Forecast**
-- The red line represents predicted future values for `{selected_kpi}`.
-- Average current value: **{selected_current_mean:.2f}**
-- Average future forecast: **{selected_future_mean:.2f}**
-
-**Confidence Band**
-- The shaded band represents the **95% confidence interval**.
-- Lower expected range: **{future_lower_mean:.2f}**
-- Upper expected range: **{future_upper_mean:.2f}**
-
-### 🔍 Observation
-
-- {trend_text}
-- {uncertainty_text}
-- A wider band means the model sees more possible variation in future behaviour.
-- Business users should consider both the forecast line and the confidence range before making inventory decisions.
-
-### 💼 Business Interpretation
-
-- If the KPI is demand or revenue related, use this forecast to plan stock availability.
-- If the KPI is lead time or delivery related, use it to assess supplier and logistics risk.
-- If the KPI is obsolescence related, use it to reduce excess stock or plan promotions.
-
-### ✅ Recommended Action
-
-Use this forecast as a **decision-support signal**, not as a fixed number.  
-Plan inventory using the forecast value, but prepare for risk using the confidence band.
 """)
