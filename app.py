@@ -610,7 +610,7 @@ with tab1:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Predicted Revenue", f"{sku_summary['Future_Predicted_Revenue'].sum():,.2f}")
     c2.metric("Predicted Profit", f"{sku_summary['Future_Predicted_Profit'].sum():,.2f}")
-    c3.metric("Predicted Margin %", f"{sku_summary['Future_Predicted_Margin_%'].mean():.2f}%")
+    c3.metric("Quantity of Products (Nos)", f"{sku_summary['Future_Predicted_Quantity'].sum():,.0f}")
     c4.metric("Anomaly Risk", "Yes" if future_anomaly_flag == 1 else "No")
 
     profit_df = sku_summary.sort_values("Future_Predicted_Profit", ascending=False)
