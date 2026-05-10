@@ -11,23 +11,17 @@ from statsmodels.tsa.arima.model import ARIMA
 # App Config
 # --------------------------------------------------
 st.set_page_config(
-    page_title="Smart Retail Future Intelligence App",
+    page_title="Retail Revenue Leakage & Inventory Optimization App",
     layout="wide"
 )
 
-st.title("Smart Retail Future Intelligence App")
+st.title("Retail Revenue Leakage & Inventory Optimization App")
 
 st.markdown("""
-This application uses backend PCA forecasting and anomaly intelligence to produce future-facing business outputs.
+This application focuses on identifying **future revenue leakage risk**, **inventory optimization opportunities**, 
+and generating a simple **AI-driven executive recommendation summary**.
 
-Visible business tabs:
-- Profit Impact Simulator
-- Business Action Recommendations
-- Revenue Leakage Detection
-- Inventory Optimization Engine
-- Executive AI Summary
-
-Select a future prediction date from the sidebar. The selected date is used in the backend, while the output remains business-friendly without showing the date repeatedly.
+The backend uses PCA, ARIMA forecasting, and anomaly detection to predict future business behaviour.
 """)
 
 # --------------------------------------------------
@@ -152,13 +146,6 @@ threshold_percentile = st.sidebar.slider(
     95
 )
 
-expected_uplift_pct = st.sidebar.slider(
-    "Expected Sales Uplift %",
-    1,
-    100,
-    10
-)
-
 target_margin_pct = st.sidebar.slider(
     "Target Margin %",
     1,
@@ -210,8 +197,10 @@ n_components = min(3, len(features))
 pca = PCA(n_components=n_components)
 pcs = pca.fit_transform(X_scaled)
 
-pc_names = [f"PC{i+1}" for i in range(n_components)]
-pc_df = pd.DataFrame(pcs, columns=pc_names)
+pc_df = pd.DataFrame(
+    pcs,
+    columns=[f"PC{i+1}" for i in range(n_components)]
+)
 
 pc_forecasts = {}
 
@@ -231,7 +220,7 @@ future_values = scaler.inverse_transform(future_scaled)
 future_df = pd.DataFrame(future_values, columns=features)
 
 # --------------------------------------------------
-# Backend Anomaly Classification
+# Backend Anomaly Logic
 # --------------------------------------------------
 X_hat = pca.inverse_transform(pcs)
 residual = X_scaled - X_hat
@@ -247,19 +236,6 @@ g2 = 0.5 * spe_norm + 0.5 * t2_norm
 spe_threshold = np.percentile(spe, threshold_percentile)
 t2_threshold = np.percentile(t2, threshold_percentile)
 g2_threshold = np.percentile(g2, threshold_percentile)
-
-anomaly = (
-    (spe > spe_threshold)
-    | (t2 > t2_threshold)
-    | (g2 > g2_threshold)
-)
-
-results = pd.DataFrame({
-    "SPE": spe,
-    "T2": t2,
-    "G2": g2,
-    "Anomaly": anomaly.astype(int)
-})
 
 future_pcs = pc_forecast_df.values
 future_scaled_reconstructed = pca.inverse_transform(future_pcs)
@@ -286,7 +262,7 @@ future_anomaly_df = pd.DataFrame({
 })
 
 # --------------------------------------------------
-# Future Date Selection - Today to 1 Year
+# Future Prediction Selection
 # --------------------------------------------------
 st.sidebar.header("Future Prediction Selection")
 
@@ -300,8 +276,6 @@ selected_future_date = st.sidebar.date_input(
     max_value=one_year_from_today
 )
 
-future_prediction_label = str(selected_future_date)
-
 days_ahead = (pd.to_datetime(selected_future_date).date() - today).days
 
 if days_ahead <= 0:
@@ -311,13 +285,9 @@ else:
 
 selected_future_row = future_df.iloc[[selected_forecast_index]]
 selected_future_anomaly = future_anomaly_df.iloc[[selected_forecast_index]]
-
 selected_future_values = selected_future_row.iloc[0]
 
-future_anomaly_flag = 0
-
-if not selected_future_anomaly.empty:
-    future_anomaly_flag = int(selected_future_anomaly["Future_Anomaly"].iloc[0])
+future_anomaly_flag = int(selected_future_anomaly["Future_Anomaly"].iloc[0])
 
 # --------------------------------------------------
 # Business Data Preparation
@@ -365,11 +335,6 @@ if lead_time_col:
 else:
     business_df["Business_Lead_Time"] = 7
 
-if service_col:
-    business_df["Business_Service_Level"] = pd.to_numeric(business_df[service_col], errors="coerce").fillna(0)
-else:
-    business_df["Business_Service_Level"] = 95
-
 business_df["Business_Profit"] = business_df["Business_Revenue"] - business_df["Business_Cost"]
 
 business_df["Business_Margin_%"] = np.where(
@@ -379,7 +344,7 @@ business_df["Business_Margin_%"] = np.where(
 )
 
 # --------------------------------------------------
-# Historical SKU Summary
+# SKU Summary
 # --------------------------------------------------
 sku_summary = (
     business_df
@@ -392,7 +357,6 @@ sku_summary = (
         Avg_Margin_Percent=("Business_Margin_%", "mean"),
         Avg_Stock=("Business_Stock", "mean"),
         Avg_Lead_Time=("Business_Lead_Time", "mean"),
-        Avg_Service_Level=("Business_Service_Level", "mean"),
         Record_Count=("Business_Revenue", "count")
     )
     .reset_index()
@@ -401,12 +365,6 @@ sku_summary = (
 sku_summary["Revenue_Per_Unit"] = np.where(
     sku_summary["Total_Quantity"] > 0,
     sku_summary["Total_Revenue"] / sku_summary["Total_Quantity"],
-    0
-)
-
-sku_summary["Profit_Per_Unit"] = np.where(
-    sku_summary["Total_Quantity"] > 0,
-    sku_summary["Total_Profit"] / sku_summary["Total_Quantity"],
     0
 )
 
@@ -438,302 +396,162 @@ if stock_col and stock_col in selected_future_values.index:
     if hist_mean != 0:
         future_stock_factor = selected_future_values[stock_col] / hist_mean
 
-sku_summary["Future_Predicted_Quantity"] = sku_summary["Total_Quantity"] * future_quantity_factor
-sku_summary["Future_Predicted_Revenue"] = sku_summary["Total_Revenue"] * future_revenue_factor
-sku_summary["Future_Predicted_Cost"] = sku_summary["Total_Cost"] * future_cost_factor
+sku_summary["Predicted_Quantity"] = sku_summary["Total_Quantity"] * future_quantity_factor
+sku_summary["Predicted_Revenue"] = sku_summary["Total_Revenue"] * future_revenue_factor
+sku_summary["Predicted_Cost"] = sku_summary["Total_Cost"] * future_cost_factor
+sku_summary["Predicted_Profit"] = sku_summary["Predicted_Revenue"] - sku_summary["Predicted_Cost"]
 
-sku_summary["Future_Predicted_Profit"] = (
-    sku_summary["Future_Predicted_Revenue"]
-    - sku_summary["Future_Predicted_Cost"]
-)
-
-sku_summary["Future_Predicted_Margin_%"] = np.where(
-    sku_summary["Future_Predicted_Revenue"] > 0,
-    sku_summary["Future_Predicted_Profit"] / sku_summary["Future_Predicted_Revenue"] * 100,
+sku_summary["Predicted_Margin_%"] = np.where(
+    sku_summary["Predicted_Revenue"] > 0,
+    sku_summary["Predicted_Profit"] / sku_summary["Predicted_Revenue"] * 100,
     0
 )
 
-sku_summary["Future_Predicted_Stock"] = sku_summary["Avg_Stock"] * future_stock_factor
-
-sku_summary["Future_Uplift_Revenue"] = (
-    sku_summary["Future_Predicted_Revenue"] * expected_uplift_pct / 100
-)
-
-sku_summary["Future_Uplift_Profit"] = (
-    sku_summary["Future_Predicted_Profit"] * expected_uplift_pct / 100
-)
+sku_summary["Predicted_Stock"] = sku_summary["Avg_Stock"] * future_stock_factor
 
 # --------------------------------------------------
-# Future Revenue Leakage Logic
+# Revenue Leakage Logic
 # --------------------------------------------------
-future_revenue_threshold = sku_summary["Future_Predicted_Revenue"].median()
-future_stock_threshold = sku_summary["Future_Predicted_Stock"].median()
+revenue_threshold = sku_summary["Predicted_Revenue"].median()
+stock_threshold = sku_summary["Predicted_Stock"].median()
 
-sku_summary["Future_Revenue_Leakage_Flag"] = np.where(
+sku_summary["Revenue_Leakage_Flag"] = np.where(
     (
-        (sku_summary["Future_Predicted_Revenue"] < future_revenue_threshold)
-        | (sku_summary["Future_Predicted_Margin_%"] < target_margin_pct)
-        | (sku_summary["Future_Predicted_Stock"] > future_stock_threshold)
+        (sku_summary["Predicted_Revenue"] < revenue_threshold)
+        | (sku_summary["Predicted_Margin_%"] < target_margin_pct)
+        | (sku_summary["Predicted_Stock"] > stock_threshold)
     ),
-    "Future Leakage Risk",
+    "Leakage Risk",
     "Healthy"
 )
 
-sku_summary["Future_Revenue_Leakage_Reason"] = np.select(
+sku_summary["Revenue_Leakage_Reason"] = np.select(
     [
-        sku_summary["Future_Predicted_Margin_%"] < target_margin_pct,
-        sku_summary["Future_Predicted_Revenue"] < future_revenue_threshold,
-        sku_summary["Future_Predicted_Stock"] > future_stock_threshold
+        sku_summary["Predicted_Margin_%"] < target_margin_pct,
+        sku_summary["Predicted_Revenue"] < revenue_threshold,
+        sku_summary["Predicted_Stock"] > stock_threshold
     ],
     [
-        "Future margin is below target",
-        "Future revenue is below median",
-        "Future stock may be excessive"
+        "Predicted margin is below target",
+        "Predicted revenue is below median",
+        "Predicted stock may be excessive"
     ],
-    default="No major future leakage signal"
+    default="No major leakage signal"
 )
 
-sku_summary["Future_Estimated_Revenue_Leakage"] = np.where(
-    sku_summary["Future_Revenue_Leakage_Flag"] == "Future Leakage Risk",
+sku_summary["Estimated_Revenue_Leakage"] = np.where(
+    sku_summary["Revenue_Leakage_Flag"] == "Leakage Risk",
     np.maximum(
-        sku_summary["Future_Predicted_Revenue"] * 0.10,
-        sku_summary["Future_Predicted_Stock"] * sku_summary["Revenue_Per_Unit"] * 0.05
+        sku_summary["Predicted_Revenue"] * 0.10,
+        sku_summary["Predicted_Stock"] * sku_summary["Revenue_Per_Unit"] * 0.05
     ),
     0
 )
 
 # --------------------------------------------------
-# Future Inventory Optimisation Logic
+# Inventory Optimization Logic
 # --------------------------------------------------
-sku_summary["Estimated_Demand_Next_Period"] = (
-    sku_summary["Future_Predicted_Quantity"]
+sku_summary["Estimated_Demand"] = (
+    sku_summary["Predicted_Quantity"]
     / sku_summary["Record_Count"].replace(0, 1)
 )
 
 sku_summary["Recommended_Safety_Stock"] = (
-    sku_summary["Estimated_Demand_Next_Period"]
+    sku_summary["Estimated_Demand"]
     * (sku_summary["Avg_Lead_Time"] / 7)
     * 0.5
 )
 
 sku_summary["Recommended_Reorder_Point"] = (
-    sku_summary["Estimated_Demand_Next_Period"]
+    sku_summary["Estimated_Demand"]
     * (sku_summary["Avg_Lead_Time"] / 7)
 ) + sku_summary["Recommended_Safety_Stock"]
 
-sku_summary["Future_Inventory_Status"] = np.select(
+sku_summary["Inventory_Status"] = np.select(
     [
-        sku_summary["Future_Predicted_Stock"] < sku_summary["Recommended_Reorder_Point"],
-        sku_summary["Future_Predicted_Stock"] > sku_summary["Recommended_Reorder_Point"] * 2
+        sku_summary["Predicted_Stock"] < sku_summary["Recommended_Reorder_Point"],
+        sku_summary["Predicted_Stock"] > sku_summary["Recommended_Reorder_Point"] * 2
     ],
     [
-        "Future Reorder Required",
-        "Future Possible Overstock"
+        "Reorder Required",
+        "Possible Overstock"
     ],
-    default="Future Balanced"
+    default="Balanced"
 )
 
-sku_summary["Future_Inventory_Action"] = np.select(
+sku_summary["Inventory_Action"] = np.select(
     [
-        sku_summary["Future_Inventory_Status"] == "Future Reorder Required",
-        sku_summary["Future_Inventory_Status"] == "Future Possible Overstock"
+        sku_summary["Inventory_Status"] == "Reorder Required",
+        sku_summary["Inventory_Status"] == "Possible Overstock"
     ],
     [
-        "Increase replenishment before selected future period",
-        "Reduce buying or run promotion before selected future period"
+        "Increase replenishment to avoid stockout",
+        "Reduce buying or run promotion"
     ],
-    default="Maintain planned inventory level"
+    default="Maintain current inventory level"
 )
 
-sku_summary["Future_Estimated_Holding_Cost"] = (
-    sku_summary["Future_Predicted_Stock"]
+sku_summary["Estimated_Holding_Cost"] = (
+    sku_summary["Predicted_Stock"]
     * sku_summary["Revenue_Per_Unit"]
     * holding_cost_pct / 100
 )
 
 # --------------------------------------------------
-# Future Business Action Logic
+# Recommended AI Action
 # --------------------------------------------------
-sku_summary["Future_Business_Action"] = np.select(
+sku_summary["Recommended_AI_Action"] = np.select(
     [
-        (
-            (sku_summary["Future_Predicted_Revenue"] >= future_revenue_threshold)
-            & (sku_summary["Future_Predicted_Margin_%"] >= target_margin_pct)
-        ),
-        (
-            (sku_summary["Future_Predicted_Revenue"] >= future_revenue_threshold)
-            & (sku_summary["Future_Predicted_Margin_%"] < target_margin_pct)
-        ),
-        sku_summary["Future_Inventory_Status"] == "Future Possible Overstock",
-        sku_summary["Future_Inventory_Status"] == "Future Reorder Required"
+        sku_summary["Revenue_Leakage_Flag"] == "Leakage Risk",
+        sku_summary["Inventory_Status"] == "Reorder Required",
+        sku_summary["Inventory_Status"] == "Possible Overstock"
     ],
     [
-        "Promote / Prioritise SKU",
-        "Review pricing or cost",
-        "Clear excess stock with promotion",
-        "Replenish inventory"
+        "Investigate revenue leakage and margin risk",
+        "Prioritise replenishment",
+        "Reduce buying or clear excess stock"
     ],
     default="Monitor"
 )
 
-sku_summary["Future_Action_Priority"] = np.select(
+sku_summary["Priority"] = np.select(
     [
-        sku_summary["Future_Business_Action"].isin(["Promote / Prioritise SKU", "Replenish inventory"]),
-        sku_summary["Future_Business_Action"].isin(["Review pricing or cost", "Clear excess stock with promotion"])
+        sku_summary["Revenue_Leakage_Flag"] == "Leakage Risk",
+        sku_summary["Inventory_Status"] == "Reorder Required",
+        sku_summary["Inventory_Status"] == "Possible Overstock"
     ],
-    ["High", "Medium"],
+    [
+        "High",
+        "High",
+        "Medium"
+    ],
     default="Low"
 )
 
 # --------------------------------------------------
-# Visible Tabs
+# Tabs
 # --------------------------------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "1. Profit Impact Simulator",
-    "2. Business Action Recommendations",
-    "3. Revenue Leakage Detection",
-    "4. Inventory Optimization Engine",
-    "5. Executive AI Summary"
+tab1, tab2, tab3 = st.tabs([
+    "1. Revenue Leakage Detection",
+    "2. Inventory Optimization",
+    "3. Recommended AI Summary"
 ])
 
 # ==================================================
-# TAB 1 — Profit Impact Simulator
+# TAB 1 — Revenue Leakage Detection
 # ==================================================
 with tab1:
-    st.header("Profit Impact Simulator")
-    st.info("Showing prediction-based output for the selected future period.")
-
-    st.markdown(
-        "**Business Impact:** Shows the predicted revenue and profit opportunity for the selected future period."
-    )
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Predicted Revenue", f"{sku_summary['Future_Predicted_Revenue'].sum():,.2f}")
-    c2.metric("Predicted Profit", f"{sku_summary['Future_Predicted_Profit'].sum():,.2f}")
-    c3.metric("Quantity of Products (Nos)", f"{sku_summary['Future_Predicted_Quantity'].sum():,.0f}")
-    c4.metric("Anomaly Risk", "Yes" if future_anomaly_flag == 1 else "No")
-
-    profit_df = sku_summary.sort_values("Future_Predicted_Profit", ascending=False)
-
-    profit_cols = [
-        category_col,
-        sku_col,
-        "Total_Revenue",
-        "Total_Profit",
-        "Future_Predicted_Revenue",
-        "Future_Predicted_Profit",
-        "Future_Predicted_Margin_%",
-        "Future_Uplift_Revenue",
-        "Future_Uplift_Profit"
-    ]
-
-    st.subheader("Future Profit Impact Table")
-    st.dataframe(profit_df[profit_cols], use_container_width=True)
-
-    top_10 = profit_df.head(10)
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Bar(
-        x=top_10[sku_col].astype(str),
-        y=top_10["Future_Predicted_Profit"],
-        name="Predicted Profit"
-    ))
-
-    fig.add_trace(go.Bar(
-        x=top_10[sku_col].astype(str),
-        y=top_10["Future_Uplift_Profit"],
-        name="Uplift Profit"
-    ))
-
-    fig.update_layout(
-        title="Top 10 SKUs: Future Profit Impact",
-        xaxis_title="SKU",
-        yaxis_title="Profit",
-        barmode="group",
-        template="plotly_white"
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-# ==================================================
-# TAB 2 — Business Action Recommendations
-# ==================================================
-with tab2:
-    st.header("Business Action Recommendations")
-    st.info("Showing prediction-based output for the selected future period.")
-
-    st.markdown(
-        "**Business Impact:** Converts the forecast into clear SKU-level actions such as promote, replenish, reprice, clear stock, or monitor."
-    )
-
-    action_df = sku_summary.sort_values(
-        ["Future_Action_Priority", "Future_Predicted_Profit"],
-        ascending=[True, False]
-    )
-
-    action_cols = [
-        category_col,
-        sku_col,
-        "Future_Predicted_Revenue",
-        "Future_Predicted_Profit",
-        "Future_Predicted_Margin_%",
-        "Future_Predicted_Stock",
-        "Future_Inventory_Status",
-        "Future_Revenue_Leakage_Flag",
-        "Future_Business_Action",
-        "Future_Action_Priority"
-    ]
-
-    st.subheader("Future Business Action Table")
-    st.dataframe(action_df[action_cols], use_container_width=True)
-
-    action_summary = (
-        action_df
-        .groupby(["Future_Business_Action", "Future_Action_Priority"])
-        .size()
-        .reset_index(name="SKU_Count")
-        .sort_values("SKU_Count", ascending=False)
-    )
-
-    st.subheader("Future Action Summary")
-    st.dataframe(action_summary, use_container_width=True)
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Bar(
-        x=action_summary["Future_Business_Action"],
-        y=action_summary["SKU_Count"],
-        name="SKU Count"
-    ))
-
-    fig.update_layout(
-        title="Recommended Future Business Actions",
-        xaxis_title="Business Action",
-        yaxis_title="Number of SKUs",
-        template="plotly_white"
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-# ==================================================
-# TAB 3 — Revenue Leakage Detection
-# ==================================================
-with tab3:
     st.header("Revenue Leakage Detection")
     st.info("Showing prediction-based output for the selected future period.")
 
     st.markdown(
-        "**Business Impact:** Identifies predicted revenue leakage risk, helping the business focus on margin, stock, and revenue recovery."
+        "**Business Impact:** Identifies predicted revenue leakage risk caused by low revenue, low margin, or excess stock."
     )
 
-    leakage_df = sku_summary.sort_values("Future_Estimated_Revenue_Leakage", ascending=False)
+    leakage_df = sku_summary.sort_values("Estimated_Revenue_Leakage", ascending=False)
 
-    leakage_count = leakage_df[
-        leakage_df["Future_Revenue_Leakage_Flag"] == "Future Leakage Risk"
-    ].shape[0]
-
-    leakage_value = leakage_df["Future_Estimated_Revenue_Leakage"].sum()
+    leakage_count = leakage_df[leakage_df["Revenue_Leakage_Flag"] == "Leakage Risk"].shape[0]
+    leakage_value = leakage_df["Estimated_Revenue_Leakage"].sum()
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Leakage Risk SKUs", leakage_count)
@@ -744,30 +562,31 @@ with tab3:
     leakage_cols = [
         category_col,
         sku_col,
-        "Future_Predicted_Revenue",
-        "Future_Predicted_Profit",
-        "Future_Predicted_Margin_%",
-        "Future_Predicted_Stock",
-        "Future_Revenue_Leakage_Flag",
-        "Future_Revenue_Leakage_Reason",
-        "Future_Estimated_Revenue_Leakage"
+        "Predicted_Revenue",
+        "Predicted_Profit",
+        "Predicted_Margin_%",
+        "Predicted_Stock",
+        "Revenue_Leakage_Flag",
+        "Revenue_Leakage_Reason",
+        "Estimated_Revenue_Leakage",
+        "Recommended_AI_Action",
+        "Priority"
     ]
 
-    st.subheader("Future Revenue Leakage Risk Table")
+    st.subheader("Revenue Leakage Risk Table")
     st.dataframe(leakage_df[leakage_cols], use_container_width=True)
 
     top_leakage = leakage_df.head(10)
 
     fig = go.Figure()
-
     fig.add_trace(go.Bar(
         x=top_leakage[sku_col].astype(str),
-        y=top_leakage["Future_Estimated_Revenue_Leakage"],
+        y=top_leakage["Estimated_Revenue_Leakage"],
         name="Estimated Leakage"
     ))
 
     fig.update_layout(
-        title="Top 10 SKUs by Future Revenue Leakage",
+        title="Top 10 SKUs by Estimated Revenue Leakage",
         xaxis_title="SKU",
         yaxis_title="Estimated Leakage",
         template="plotly_white"
@@ -776,71 +595,64 @@ with tab3:
     st.plotly_chart(fig, use_container_width=True)
 
 # ==================================================
-# TAB 4 — Inventory Optimization Engine
+# TAB 2 — Inventory Optimization
 # ==================================================
-with tab4:
-    st.header("Inventory Optimization Engine")
+with tab2:
+    st.header("Inventory Optimization")
     st.info("Showing prediction-based output for the selected future period.")
 
     st.markdown(
-        "**Business Impact:** Shows predicted inventory risk, helping reduce stockouts, overstock, and holding cost."
+        "**Business Impact:** Highlights stockout risk, overstock risk, reorder need, and inventory holding cost."
     )
 
     inventory_df = sku_summary.sort_values(
-        ["Future_Inventory_Status", "Future_Estimated_Holding_Cost"],
+        ["Inventory_Status", "Estimated_Holding_Cost"],
         ascending=[True, False]
     )
 
-    reorder_count = inventory_df[
-        inventory_df["Future_Inventory_Status"] == "Future Reorder Required"
-    ].shape[0]
-
-    overstock_count = inventory_df[
-        inventory_df["Future_Inventory_Status"] == "Future Possible Overstock"
-    ].shape[0]
-
-    balanced_count = inventory_df[
-        inventory_df["Future_Inventory_Status"] == "Future Balanced"
-    ].shape[0]
+    reorder_count = inventory_df[inventory_df["Inventory_Status"] == "Reorder Required"].shape[0]
+    overstock_count = inventory_df[inventory_df["Inventory_Status"] == "Possible Overstock"].shape[0]
+    balanced_count = inventory_df[inventory_df["Inventory_Status"] == "Balanced"].shape[0]
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Reorder SKUs", reorder_count)
     c2.metric("Overstock SKUs", overstock_count)
     c3.metric("Balanced SKUs", balanced_count)
-    c4.metric("Holding Cost", f"{inventory_df['Future_Estimated_Holding_Cost'].sum():,.2f}")
+    c4.metric("Holding Cost", f"{inventory_df['Estimated_Holding_Cost'].sum():,.2f}")
 
     inventory_cols = [
         category_col,
         sku_col,
-        "Future_Predicted_Quantity",
-        "Future_Predicted_Stock",
+        "Predicted_Quantity",
+        "Predicted_Stock",
+        "Estimated_Demand",
         "Recommended_Safety_Stock",
         "Recommended_Reorder_Point",
-        "Future_Inventory_Status",
-        "Future_Inventory_Action",
-        "Future_Estimated_Holding_Cost"
+        "Inventory_Status",
+        "Inventory_Action",
+        "Estimated_Holding_Cost",
+        "Priority"
     ]
 
-    st.subheader("Future Inventory Optimisation Table")
+    st.subheader("Inventory Optimization Table")
     st.dataframe(inventory_df[inventory_cols], use_container_width=True)
 
     inventory_summary = (
         inventory_df
-        .groupby("Future_Inventory_Status")
+        .groupby("Inventory_Status")
         .size()
         .reset_index(name="SKU_Count")
     )
 
     fig = go.Figure()
-
     fig.add_trace(go.Bar(
-        x=inventory_summary["Future_Inventory_Status"],
+        x=inventory_summary["Inventory_Status"],
         y=inventory_summary["SKU_Count"],
         name="SKU Count"
     ))
 
     fig.update_layout(
-        title="Future Inventory Status Summary",
+        title="Inventory Status Summary",
         xaxis_title="Inventory Status",
         yaxis_title="Number of SKUs",
         template="plotly_white"
@@ -849,124 +661,69 @@ with tab4:
     st.plotly_chart(fig, use_container_width=True)
 
 # ==================================================
-# TAB 5 — Executive AI Summary
+# TAB 3 — Recommended AI Summary
 # ==================================================
-with tab5:
-    st.header("Executive AI Summary")
+with tab3:
+    st.header("Recommended AI Summary")
     st.info("Showing prediction-based output for the selected future period.")
 
     st.markdown(
-        "**Business Impact:** Provides an executive-level summary of predicted profit, leakage, inventory, and anomaly risk."
+        "**Business Impact:** Summarises leakage, inventory risk, anomaly risk, and recommended business actions in one place."
     )
 
-    future_total_revenue = sku_summary["Future_Predicted_Revenue"].sum()
-    future_total_profit = sku_summary["Future_Predicted_Profit"].sum()
-    future_avg_margin = sku_summary["Future_Predicted_Margin_%"].mean()
-    future_total_leakage = sku_summary["Future_Estimated_Revenue_Leakage"].sum()
+    total_predicted_revenue = sku_summary["Predicted_Revenue"].sum()
+    total_predicted_profit = sku_summary["Predicted_Profit"].sum()
+    total_leakage = sku_summary["Estimated_Revenue_Leakage"].sum()
 
-    reorder_count = sku_summary[
-        sku_summary["Future_Inventory_Status"] == "Future Reorder Required"
-    ].shape[0]
-
-    overstock_count = sku_summary[
-        sku_summary["Future_Inventory_Status"] == "Future Possible Overstock"
-    ].shape[0]
-
-    balanced_count = sku_summary[
-        sku_summary["Future_Inventory_Status"] == "Future Balanced"
-    ].shape[0]
-
-    best_sku_row = sku_summary.sort_values("Future_Predicted_Profit", ascending=False).head(1)
-    leakage_sku_row = sku_summary.sort_values("Future_Estimated_Revenue_Leakage", ascending=False).head(1)
-
-    best_sku = best_sku_row[sku_col].iloc[0] if not best_sku_row.empty else "N/A"
-    best_profit = best_sku_row["Future_Predicted_Profit"].iloc[0] if not best_sku_row.empty else 0
-
-    leakage_sku = leakage_sku_row[sku_col].iloc[0] if not leakage_sku_row.empty else "N/A"
-    leakage_value = leakage_sku_row["Future_Estimated_Revenue_Leakage"].iloc[0] if not leakage_sku_row.empty else 0
+    leakage_count = sku_summary[sku_summary["Revenue_Leakage_Flag"] == "Leakage Risk"].shape[0]
+    reorder_count = sku_summary[sku_summary["Inventory_Status"] == "Reorder Required"].shape[0]
+    overstock_count = sku_summary[sku_summary["Inventory_Status"] == "Possible Overstock"].shape[0]
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Revenue", f"{future_total_revenue:,.2f}")
-    c2.metric("Profit", f"{future_total_profit:,.2f}")
-    c3.metric("Margin %", f"{future_avg_margin:.2f}%")
-    c4.metric("Leakage", f"{future_total_leakage:,.2f}")
+    c1.metric("Predicted Revenue", f"{total_predicted_revenue:,.2f}")
+    c2.metric("Predicted Profit", f"{total_predicted_profit:,.2f}")
+    c3.metric("Estimated Leakage", f"{total_leakage:,.2f}")
+    c4.metric("Anomaly Risk", "Yes" if future_anomaly_flag == 1 else "No")
+
+    st.subheader("AI Recommended Actions")
+
+    recommendation_summary = (
+        sku_summary
+        .groupby(["Recommended_AI_Action", "Priority"])
+        .size()
+        .reset_index(name="SKU_Count")
+        .sort_values(["Priority", "SKU_Count"], ascending=[True, False])
+    )
+
+    st.dataframe(recommendation_summary, use_container_width=True)
+
+    highest_leakage_row = sku_summary.sort_values("Estimated_Revenue_Leakage", ascending=False).head(1)
+    highest_stock_row = sku_summary.sort_values("Predicted_Stock", ascending=False).head(1)
+
+    highest_leakage_sku = highest_leakage_row[sku_col].iloc[0] if not highest_leakage_row.empty else "N/A"
+    highest_leakage_value = highest_leakage_row["Estimated_Revenue_Leakage"].iloc[0] if not highest_leakage_row.empty else 0
+
+    highest_stock_sku = highest_stock_row[sku_col].iloc[0] if not highest_stock_row.empty else "N/A"
+    highest_stock_value = highest_stock_row["Predicted_Stock"].iloc[0] if not highest_stock_row.empty else 0
 
     st.markdown(f"""
-### Executive AI Summary
+### Executive Summary
 
-The selected future period is expected to generate predicted revenue of **{future_total_revenue:,.2f}** and predicted profit of **{future_total_profit:,.2f}**.
+The system predicts total revenue of **{total_predicted_revenue:,.2f}** and total profit of **{total_predicted_profit:,.2f}** for the selected future period.
 
-The predicted average margin is **{future_avg_margin:.2f}%**.
+Estimated revenue leakage is **{total_leakage:,.2f}**, with **{leakage_count} SKUs** flagged as leakage risk.
 
-The estimated future revenue leakage is **{future_total_leakage:,.2f}**.
+Inventory analysis shows **{reorder_count} SKUs** requiring reorder and **{overstock_count} SKUs** showing possible overstock risk.
 
-Future anomaly risk: **{"Yes" if future_anomaly_flag == 1 else "No"}**
+The SKU with the highest estimated leakage risk is **{highest_leakage_sku}**, with potential leakage of **{highest_leakage_value:,.2f}**.
 
-### Best Commercial Opportunity
+The SKU with the highest predicted stock exposure is **{highest_stock_sku}**, with predicted stock of **{highest_stock_value:,.2f}** units.
 
-The strongest future profit-contributing SKU is **{best_sku}**, with predicted profit of **{best_profit:,.2f}**.
+### Recommended Business Focus
 
-Recommended action:
-- Prioritise this SKU for promotion.
-- Protect stock availability.
-- Avoid supply disruption.
-- Consider bundle or cross-sell opportunities.
-
-### Revenue Leakage Risk
-
-The SKU with the highest future leakage risk is **{leakage_sku}**, with estimated leakage of **{leakage_value:,.2f}**.
-
-Recommended action:
-- Review pricing.
-- Check cost structure.
-- Investigate slow-moving stock.
-- Consider promotional clearance.
-
-### Inventory Position
-
-- Future reorder required SKUs: **{reorder_count}**
-- Future possible overstock SKUs: **{overstock_count}**
-- Future balanced SKUs: **{balanced_count}**
-
-### CEO / CTO Level Recommendation
-
-1. **Grow profitable SKUs**  
-   Promote SKUs with high predicted revenue and high predicted profit.
-
-2. **Fix future leakage areas**  
-   Investigate SKUs with low predicted margin, low predicted revenue, or overstock risk.
-
-3. **Optimise inventory investment**  
-   Replenish SKUs with future stockout risk and reduce excess inventory exposure.
-
-4. **Monitor risk periods**  
-   If the future anomaly flag is Yes, review demand, stock, margin, and operational KPIs.
+1. Investigate SKUs with high estimated revenue leakage.
+2. Review low-margin SKUs and validate pricing or cost assumptions.
+3. Replenish SKUs marked as reorder required.
+4. Reduce excess buying for overstocked SKUs.
+5. Monitor anomaly risk before executing business decisions.
 """)
-
-    executive_actions = pd.DataFrame({
-        "Priority": ["High", "High", "Medium", "Medium", "Low"],
-        "Action Area": [
-            "Profit Growth",
-            "Revenue Leakage",
-            "Inventory Optimisation",
-            "Anomaly Monitoring",
-            "Forecast Governance"
-        ],
-        "Recommended Action": [
-            "Promote high predicted profit SKUs and protect stock availability",
-            "Investigate SKUs with future leakage risk",
-            "Reorder understocked SKUs and reduce overstock exposure",
-            "Monitor abnormal future KPI behaviour",
-            "Review forecast outputs periodically with business users"
-        ],
-        "Business Benefit": [
-            "Revenue and profit uplift",
-            "Reduced missed revenue opportunity",
-            "Lower holding cost and fewer stockouts",
-            "Earlier risk detection",
-            "Improved trust in AI-driven planning"
-        ]
-    })
-
-    st.subheader("Top Executive Actions")
-    st.dataframe(executive_actions, use_container_width=True)
