@@ -679,12 +679,6 @@ with tab2:
     total_predicted_profit = sku_summary["Predicted_Profit"].sum()
     avg_predicted_margin = sku_summary["Predicted_Margin_%"].mean()
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Predicted Demand Qty", f"{total_predicted_quantity:,.0f}")
-    c2.metric("Predicted Revenue", f"{total_predicted_revenue:,.2f}")
-    c3.metric("Predicted Profit", f"{total_predicted_profit:,.2f}")
-    c4.metric("Predicted Margin %", f"{avg_predicted_margin:.2f}%")
-
     forecast_df = sku_summary.sort_values("Predicted_Quantity", ascending=False)
 
     forecast_cols = [
