@@ -20,14 +20,14 @@ st.title("Smart Retail Future Intelligence App")
 st.markdown("""
 This application uses backend PCA forecasting and anomaly intelligence to produce future-facing business outputs.
 
-Only business-facing tabs are shown:
+Visible business tabs:
 - Profit Impact Simulator
 - Business Action Recommendations
 - Revenue Leakage Detection
 - Inventory Optimization Engine
 - Executive AI Summary
 
-Select a future date or future step from the sidebar, and all tabs will update based on that selected future prediction period.
+Select a future prediction date from the sidebar, and all tabs will update for that future date.
 """)
 
 # --------------------------------------------------
@@ -71,29 +71,11 @@ if date_col:
     df = df.sort_values(date_col)
 
 # --------------------------------------------------
-# Sidebar Filters
+# Sidebar Filters Only
 # --------------------------------------------------
 st.sidebar.header("Filters")
 
 filtered_df = df.copy()
-
-if date_col:
-    min_date = filtered_df[date_col].min().date()
-    max_date = filtered_df[date_col].max().date()
-
-    selected_date_range = st.sidebar.date_input(
-        "Select Historical Date Range",
-        value=(min_date, max_date),
-        min_value=min_date,
-        max_value=max_date
-    )
-
-    if isinstance(selected_date_range, tuple) and len(selected_date_range) == 2:
-        start_date, end_date = selected_date_range
-        filtered_df = filtered_df[
-            (filtered_df[date_col].dt.date >= start_date)
-            & (filtered_df[date_col].dt.date <= end_date)
-        ]
 
 if category_col:
     category_options = ["All"] + sorted(filtered_df[category_col].dropna().astype(str).unique())
@@ -116,7 +98,7 @@ if filtered_df.empty:
 st.sidebar.success(f"Filtered records: {len(filtered_df)}")
 
 # --------------------------------------------------
-# Numeric Column Setup
+# Numeric Columns
 # --------------------------------------------------
 numeric_cols = filtered_df.select_dtypes(include=np.number).columns.tolist()
 
@@ -124,63 +106,42 @@ if len(numeric_cols) < 3:
     st.error("Dataset must contain at least 3 numeric columns.")
     st.stop()
 
-def get_default_column(possible_names):
+# --------------------------------------------------
+# Automatic Column Mapping
+# --------------------------------------------------
+def get_default_column(possible_names, exclude_words=None):
+    exclude_words = exclude_words or []
+
     for name in possible_names:
         for col in numeric_cols:
-            if name.lower() in col.lower():
+            lower_col = col.lower()
+
+            if any(ex_word in lower_col for ex_word in exclude_words):
+                continue
+
+            if name.lower() in lower_col:
                 return col
-    return "None"
 
-st.sidebar.header("Column Mapping")
+    return None
 
-quantity_col = st.sidebar.selectbox(
-    "Quantity Column",
-    ["None"] + numeric_cols,
-    index=(["None"] + numeric_cols).index(get_default_column(["quantity", "qty", "sales_qty"]))
+
+quantity_col = get_default_column(["sales_qty", "quantity", "qty"])
+revenue_col = get_default_column(["sales_revenue", "revenue", "amount", "sales"])
+cost_col = get_default_column(["unit_cost", "cost"])
+price_col = get_default_column(["unit_price", "price"])
+stock_col = get_default_column(
+    ["stock_on_hand", "inventory", "soh", "stock_qty", "stock_level"],
+    exclude_words=["flag", "stockout"]
 )
-
-revenue_col = st.sidebar.selectbox(
-    "Revenue Column",
-    ["None"] + numeric_cols,
-    index=(["None"] + numeric_cols).index(get_default_column(["revenue", "sales_revenue", "amount"]))
-)
-
-cost_col = st.sidebar.selectbox(
-    "Cost Column",
-    ["None"] + numeric_cols,
-    index=(["None"] + numeric_cols).index(get_default_column(["cost", "unit_cost"]))
-)
-
-price_col = st.sidebar.selectbox(
-    "Unit Price Column",
-    ["None"] + numeric_cols,
-    index=(["None"] + numeric_cols).index(get_default_column(["price", "unit_price"]))
-)
-
-stock_col = st.sidebar.selectbox(
-    "Stock / Inventory Column",
-    ["None"] + numeric_cols,
-    index=(["None"] + numeric_cols).index(get_default_column(["stock", "inventory", "soh"]))
-)
-
-lead_time_col = st.sidebar.selectbox(
-    "Lead Time Column",
-    ["None"] + numeric_cols,
-    index=(["None"] + numeric_cols).index(get_default_column(["lead_time", "lead time"]))
-)
-
-service_col = st.sidebar.selectbox(
-    "Delivery Reliability / Service Column",
-    ["None"] + numeric_cols,
-    index=(["None"] + numeric_cols).index(get_default_column(["delivery", "reliability", "service"]))
-)
+lead_time_col = get_default_column(["lead_time_days", "lead_time", "lead time"])
+service_col = get_default_column(["delivery_reliability", "reliability", "service"])
 
 # --------------------------------------------------
 # Business Assumptions
 # --------------------------------------------------
 st.sidebar.header("Business Assumptions")
 
-future_steps = st.sidebar.slider("Future Prediction Periods", 5, 30, 10)
+future_steps = 365
 
 threshold_percentile = st.sidebar.slider(
     "Anomaly Threshold Percentile",
@@ -211,9 +172,9 @@ holding_cost_pct = st.sidebar.slider(
 )
 
 # --------------------------------------------------
-# Backend Feature Selection
+# Backend Feature Selection - Hidden
 # --------------------------------------------------
-default_features = [
+features = [
     col for col in [
         quantity_col,
         revenue_col,
@@ -223,21 +184,11 @@ default_features = [
         lead_time_col,
         service_col
     ]
-    if col != "None" and col in numeric_cols
+    if col is not None and col in numeric_cols
 ]
 
-if len(default_features) < 3:
-    default_features = numeric_cols[:5]
-
-features = st.sidebar.multiselect(
-    "Backend KPI Features for Forecasting",
-    numeric_cols,
-    default=default_features
-)
-
 if len(features) < 3:
-    st.error("Please select at least 3 numeric KPI features.")
-    st.stop()
+    features = numeric_cols[:5]
 
 # --------------------------------------------------
 # Backend PCA + Forecasting
@@ -333,68 +284,31 @@ future_anomaly_df = pd.DataFrame({
 })
 
 # --------------------------------------------------
-# Future Date / Step Selection
+# Future Date Selection - Today to 1 Year
 # --------------------------------------------------
 st.sidebar.header("Future Prediction Selection")
 
-if date_col:
-    last_date = filtered_df[date_col].max()
-    inferred_freq = pd.infer_freq(filtered_df[date_col].dropna())
+today = pd.Timestamp.today().date()
+one_year_from_today = (pd.Timestamp.today() + pd.DateOffset(years=1)).date()
 
-    if inferred_freq is None:
-        inferred_freq = "W"
+selected_future_date = st.sidebar.date_input(
+    "Select Future Prediction Date",
+    value=today,
+    min_value=today,
+    max_value=one_year_from_today
+)
 
-    future_dates = pd.date_range(
-        start=last_date,
-        periods=future_steps + 1,
-        freq=inferred_freq
-    )[1:]
+future_prediction_label = str(selected_future_date)
 
-    future_df.insert(0, "Future_Date", future_dates)
-    future_anomaly_df.insert(0, "Future_Date", future_dates)
+days_ahead = (pd.to_datetime(selected_future_date).date() - today).days
 
-    future_df["Future_Date_Only"] = future_df["Future_Date"].dt.date
-    future_anomaly_df["Future_Date_Only"] = future_anomaly_df["Future_Date"].dt.date
-
-    selected_future_date = st.sidebar.date_input(
-        "Select Future Prediction Date",
-        value=future_df["Future_Date_Only"].min(),
-        min_value=future_df["Future_Date_Only"].min(),
-        max_value=future_df["Future_Date_Only"].max()
-    )
-
-    selected_future_row = future_df[
-        future_df["Future_Date_Only"] == selected_future_date
-    ]
-
-    selected_future_anomaly = future_anomaly_df[
-        future_anomaly_df["Future_Date_Only"] == selected_future_date
-    ]
-
-    future_prediction_label = str(selected_future_date)
-
+if days_ahead <= 0:
+    selected_forecast_index = 0
 else:
-    future_df.insert(0, "Future_Step", np.arange(1, future_steps + 1))
-    future_anomaly_df.insert(0, "Future_Step", np.arange(1, future_steps + 1))
+    selected_forecast_index = min(days_ahead - 1, len(future_df) - 1)
 
-    selected_future_step = st.sidebar.selectbox(
-        "Select Future Prediction Step",
-        future_df["Future_Step"].tolist()
-    )
-
-    selected_future_row = future_df[
-        future_df["Future_Step"] == selected_future_step
-    ]
-
-    selected_future_anomaly = future_anomaly_df[
-        future_anomaly_df["Future_Step"] == selected_future_step
-    ]
-
-    future_prediction_label = f"Future Step {selected_future_step}"
-
-if selected_future_row.empty:
-    st.error("No future prediction available for the selected period.")
-    st.stop()
+selected_future_row = future_df.iloc[[selected_forecast_index]]
+selected_future_anomaly = future_anomaly_df.iloc[[selected_forecast_index]]
 
 selected_future_values = selected_future_row.iloc[0]
 
@@ -406,17 +320,6 @@ if not selected_future_anomaly.empty:
 # --------------------------------------------------
 # Business Data Preparation
 # --------------------------------------------------
-def clean_col(col):
-    return None if col == "None" else col
-
-quantity_col = clean_col(quantity_col)
-revenue_col = clean_col(revenue_col)
-cost_col = clean_col(cost_col)
-price_col = clean_col(price_col)
-stock_col = clean_col(stock_col)
-lead_time_col = clean_col(lead_time_col)
-service_col = clean_col(service_col)
-
 business_df = filtered_df.copy()
 
 if sku_col is None:
@@ -536,8 +439,10 @@ if stock_col and stock_col in selected_future_values.index:
 sku_summary["Future_Predicted_Quantity"] = sku_summary["Total_Quantity"] * future_quantity_factor
 sku_summary["Future_Predicted_Revenue"] = sku_summary["Total_Revenue"] * future_revenue_factor
 sku_summary["Future_Predicted_Cost"] = sku_summary["Total_Cost"] * future_cost_factor
+
 sku_summary["Future_Predicted_Profit"] = (
-    sku_summary["Future_Predicted_Revenue"] - sku_summary["Future_Predicted_Cost"]
+    sku_summary["Future_Predicted_Revenue"]
+    - sku_summary["Future_Predicted_Cost"]
 )
 
 sku_summary["Future_Predicted_Margin_%"] = np.where(
@@ -1002,8 +907,6 @@ Recommended action:
 - Future balanced SKUs: **{balanced_count}**
 
 ### CEO / CTO Level Recommendation
-
-The business should focus on three priorities:
 
 1. **Grow profitable SKUs**  
    Promote SKUs with high predicted revenue and high predicted profit.
