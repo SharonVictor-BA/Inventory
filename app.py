@@ -75,18 +75,26 @@ st.sidebar.header("Filters")
 filtered_df = df.copy()
 
 if category_col:
-    category_options = ["All"] + sorted(filtered_df[category_col].dropna().astype(str).unique())
+    category_options = ["All"] + sorted(
+        filtered_df[category_col].dropna().astype(str).unique()
+    )
     selected_category = st.sidebar.selectbox("Select Category", category_options)
 
     if selected_category != "All":
-        filtered_df = filtered_df[filtered_df[category_col].astype(str) == selected_category]
+        filtered_df = filtered_df[
+            filtered_df[category_col].astype(str) == selected_category
+        ]
 
 if sku_col:
-    sku_options = ["All"] + sorted(filtered_df[sku_col].dropna().astype(str).unique())
+    sku_options = ["All"] + sorted(
+        filtered_df[sku_col].dropna().astype(str).unique()
+    )
     selected_sku = st.sidebar.selectbox("Select SKU / Item / Product", sku_options)
 
     if selected_sku != "All":
-        filtered_df = filtered_df[filtered_df[sku_col].astype(str) == selected_sku]
+        filtered_df = filtered_df[
+            filtered_df[sku_col].astype(str) == selected_sku
+        ]
 
 if filtered_df.empty:
     st.error("No records available for the selected filters.")
@@ -247,8 +255,16 @@ future_residual = future_scaled - future_scaled_reconstructed
 future_spe = np.sum(future_residual ** 2, axis=1)
 future_t2 = np.sum((future_pcs ** 2) / eigen_vals, axis=1)
 
-future_spe_norm = (future_spe - np.min(spe)) / (np.max(spe) - np.min(spe) + 1e-9)
-future_t2_norm = (future_t2 - np.min(t2)) / (np.max(t2) - np.min(t2) + 1e-9)
+future_spe_norm = (
+    (future_spe - np.min(spe)) /
+    (np.max(spe) - np.min(spe) + 1e-9)
+)
+
+future_t2_norm = (
+    (future_t2 - np.min(t2)) /
+    (np.max(t2) - np.min(t2) + 1e-9)
+)
+
 future_g2 = 0.5 * future_spe_norm + 0.5 * future_t2_norm
 
 future_anomaly = (
@@ -320,7 +336,10 @@ if revenue_col:
     ).fillna(0)
 elif price_col:
     business_df["Business_Revenue"] = (
-        pd.to_numeric(business_df[price_col], errors="coerce").fillna(0)
+        pd.to_numeric(
+            business_df[price_col],
+            errors="coerce"
+        ).fillna(0)
         * business_df["Business_Quantity"]
     )
 else:
@@ -328,7 +347,10 @@ else:
 
 if cost_col:
     business_df["Business_Cost"] = (
-        pd.to_numeric(business_df[cost_col], errors="coerce").fillna(0)
+        pd.to_numeric(
+            business_df[cost_col],
+            errors="coerce"
+        ).fillna(0)
         * business_df["Business_Quantity"]
     )
 else:
@@ -413,9 +435,18 @@ if stock_col and stock_col in selected_future_values.index:
     if hist_mean != 0:
         future_stock_factor = selected_future_values[stock_col] / hist_mean
 
-sku_summary["Predicted_Quantity"] = sku_summary["Total_Quantity"] * future_quantity_factor
-sku_summary["Predicted_Revenue"] = sku_summary["Total_Revenue"] * future_revenue_factor
-sku_summary["Predicted_Cost"] = sku_summary["Total_Cost"] * future_cost_factor
+sku_summary["Predicted_Quantity"] = (
+    sku_summary["Total_Quantity"] * future_quantity_factor
+)
+
+sku_summary["Predicted_Revenue"] = (
+    sku_summary["Total_Revenue"] * future_revenue_factor
+)
+
+sku_summary["Predicted_Cost"] = (
+    sku_summary["Total_Cost"] * future_cost_factor
+)
+
 sku_summary["Predicted_Profit"] = (
     sku_summary["Predicted_Revenue"] - sku_summary["Predicted_Cost"]
 )
@@ -426,7 +457,9 @@ sku_summary["Predicted_Margin_%"] = np.where(
     0
 )
 
-sku_summary["Predicted_Stock"] = sku_summary["Avg_Stock"] * future_stock_factor
+sku_summary["Predicted_Stock"] = (
+    sku_summary["Avg_Stock"] * future_stock_factor
+)
 
 # --------------------------------------------------
 # Revenue Leakage Logic
@@ -462,7 +495,9 @@ sku_summary["Estimated_Revenue_Leakage"] = np.where(
     sku_summary["Revenue_Leakage_Flag"] == "Leakage Risk",
     np.maximum(
         sku_summary["Predicted_Revenue"] * 0.10,
-        sku_summary["Predicted_Stock"] * sku_summary["Revenue_Per_Unit"] * 0.05
+        sku_summary["Predicted_Stock"]
+        * sku_summary["Revenue_Per_Unit"]
+        * 0.05
     ),
     0
 )
@@ -489,7 +524,8 @@ sku_summary["Recommended_Reorder_Point"] = (
 sku_summary["Inventory_Status"] = np.select(
     [
         sku_summary["Predicted_Stock"] < sku_summary["Recommended_Reorder_Point"],
-        sku_summary["Predicted_Stock"] > sku_summary["Recommended_Reorder_Point"] * 2
+        sku_summary["Predicted_Stock"]
+        > sku_summary["Recommended_Reorder_Point"] * 2
     ],
     [
         "Reorder Required",
@@ -574,7 +610,10 @@ tab1, tab2, tab3 = st.tabs([
 # ==================================================
 with tab1:
     st.header("Revenue Leakage & Inventory Optimization")
-    st.info(f"Showing prediction-based output for prediction date: {selected_future_date}")
+
+    st.info(
+        f"Showing prediction-based output for prediction date: {selected_future_date}"
+    )
 
     st.markdown(
         "**Business Impact:** Combines revenue leakage and inventory risk to identify SKUs that may lose revenue, create excess stock, or require replenishment."
@@ -585,16 +624,33 @@ with tab1:
         ascending=[False, False]
     )
 
-    leakage_count = combined_df[combined_df["Revenue_Leakage_Flag"] == "Leakage Risk"].shape[0]
-    reorder_count = combined_df[combined_df["Inventory_Status"] == "Reorder Required"].shape[0]
-    overstock_count = combined_df[combined_df["Inventory_Status"] == "Possible Overstock"].shape[0]
+    leakage_count = combined_df[
+        combined_df["Revenue_Leakage_Flag"] == "Leakage Risk"
+    ].shape[0]
+
+    reorder_count = combined_df[
+        combined_df["Inventory_Status"] == "Reorder Required"
+    ].shape[0]
+
+    overstock_count = combined_df[
+        combined_df["Inventory_Status"] == "Possible Overstock"
+    ].shape[0]
+
     total_leakage = combined_df["Estimated_Revenue_Leakage"].sum()
     total_holding_cost = combined_df["Estimated_Holding_Cost"].sum()
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Leakage Risk SKUs", leakage_count)
-    c2.metric("Reorder SKUs", reorder_count)
-    c3.metric("Overstock SKUs", overstock_count)
+    c2.metric("Estimated Leakage", f"{total_leakage:,.2f}")
+    c3.metric("Reorder SKUs", reorder_count)
+    c4.metric("Overstock SKUs", overstock_count)
+
+    c5, c6 = st.columns(2)
+    c5.metric("Holding Cost", f"{total_holding_cost:,.2f}")
+    c6.metric(
+        "Anomaly Risk",
+        "Yes" if future_anomaly_flag == 1 else "No"
+    )
 
     combined_cols = [
         category_col,
@@ -617,7 +673,12 @@ with tab1:
     ]
 
     st.subheader("Combined Revenue Leakage and Inventory Risk Table")
-    st.dataframe(combined_df[combined_cols], use_container_width=True)
+
+    st.dataframe(
+        combined_df[combined_cols],
+        use_container_width=True,
+        hide_index=True
+    )
 
     top_risk = combined_df.head(10)
 
@@ -654,17 +715,25 @@ with tab1:
     )
 
     st.subheader("Combined Risk Summary")
-    st.dataframe(risk_summary, use_container_width=True)
+
+    st.dataframe(
+        risk_summary,
+        use_container_width=True,
+        hide_index=True
+    )
 
 # ==================================================
 # TAB 2 — Demand & Forecasting
 # ==================================================
 with tab2:
     st.header("Demand & Forecasting")
-    st.info(f"Showing prediction-based output for prediction date: {selected_future_date}")
+
+    st.info(
+        f"Showing prediction-based output for prediction date: {selected_future_date}"
+    )
 
     st.markdown(
-        "**Business Impact:** Shows predicted demand, revenue, stock, and anomaly signals to support future planning and replenishment decisions."
+        "**Business Impact:** Shows predicted demand, revenue, stock movement, and anomaly signals to support future planning and replenishment decisions."
     )
 
     total_predicted_quantity = sku_summary["Predicted_Quantity"].sum()
@@ -672,7 +741,10 @@ with tab2:
     total_predicted_profit = sku_summary["Predicted_Profit"].sum()
     avg_predicted_margin = sku_summary["Predicted_Margin_%"].mean()
 
-    forecast_df = sku_summary.sort_values("Predicted_Quantity", ascending=False)
+    forecast_df = sku_summary.sort_values(
+        "Predicted_Quantity",
+        ascending=False
+    )
 
     forecast_cols = [
         category_col,
@@ -690,7 +762,12 @@ with tab2:
     ]
 
     st.subheader("Demand and Forecasting Table")
-    st.dataframe(forecast_df[forecast_cols], use_container_width=True)
+
+    st.dataframe(
+        forecast_df[forecast_cols],
+        use_container_width=True,
+        hide_index=True
+    )
 
     top_demand = forecast_df.head(10)
 
@@ -711,7 +788,11 @@ with tab2:
 
     st.plotly_chart(fig_demand, use_container_width=True)
 
-    top_revenue = forecast_df.sort_values("Predicted_Revenue", ascending=False).head(10)
+    top_revenue = (
+        forecast_df
+        .sort_values("Predicted_Revenue", ascending=False)
+        .head(10)
+    )
 
     fig_revenue = go.Figure()
 
@@ -751,7 +832,10 @@ with tab2:
 # ==================================================
 with tab3:
     st.header("Estimated AI Recommendations")
-    st.info(f"Showing prediction-based output for prediction date: {selected_future_date}")
+
+    st.info(
+        f"Showing prediction-based output for prediction date: {selected_future_date}"
+    )
 
     st.markdown(
         "**Business Impact:** Converts forecast, leakage, and inventory results into simple recommended actions for business users."
@@ -759,15 +843,27 @@ with tab3:
 
     total_leakage = sku_summary["Estimated_Revenue_Leakage"].sum()
     total_holding_cost = sku_summary["Estimated_Holding_Cost"].sum()
-    leakage_count = sku_summary[sku_summary["Revenue_Leakage_Flag"] == "Leakage Risk"].shape[0]
-    reorder_count = sku_summary[sku_summary["Inventory_Status"] == "Reorder Required"].shape[0]
-    overstock_count = sku_summary[sku_summary["Inventory_Status"] == "Possible Overstock"].shape[0]
+
+    leakage_count = sku_summary[
+        sku_summary["Revenue_Leakage_Flag"] == "Leakage Risk"
+    ].shape[0]
+
+    reorder_count = sku_summary[
+        sku_summary["Inventory_Status"] == "Reorder Required"
+    ].shape[0]
+
+    overstock_count = sku_summary[
+        sku_summary["Inventory_Status"] == "Possible Overstock"
+    ].shape[0]
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Estimated Leakage", f"{total_leakage:,.2f}")
     c2.metric("Holding Cost", f"{total_holding_cost:,.2f}")
     c3.metric("High Risk SKUs", leakage_count + reorder_count)
-    c4.metric("Anomaly Risk", "Yes" if future_anomaly_flag == 1 else "No")
+    c4.metric(
+        "Anomaly Risk",
+        "Yes" if future_anomaly_flag == 1 else "No"
+    )
 
     recommendation_summary = (
         sku_summary
@@ -778,7 +874,12 @@ with tab3:
     )
 
     st.subheader("AI Recommendation Summary")
-    st.dataframe(recommendation_summary, use_container_width=True)
+
+    st.dataframe(
+        recommendation_summary,
+        use_container_width=True,
+        hide_index=True
+    )
 
     recommendation_df = sku_summary.sort_values(
         ["Priority", "Estimated_Revenue_Leakage", "Estimated_Holding_Cost"],
@@ -799,20 +900,60 @@ with tab3:
     ]
 
     st.subheader("SKU-Level AI Recommendations")
-    st.dataframe(recommendation_df[recommendation_cols], use_container_width=True)
 
-    highest_leakage_row = sku_summary.sort_values("Estimated_Revenue_Leakage", ascending=False).head(1)
-    highest_stock_row = sku_summary.sort_values("Predicted_Stock", ascending=False).head(1)
-    highest_demand_row = sku_summary.sort_values("Predicted_Quantity", ascending=False).head(1)
+    st.dataframe(
+        recommendation_df[recommendation_cols],
+        use_container_width=True,
+        hide_index=True
+    )
 
-    highest_leakage_sku = highest_leakage_row[sku_col].iloc[0] if not highest_leakage_row.empty else "N/A"
-    highest_leakage_value = highest_leakage_row["Estimated_Revenue_Leakage"].iloc[0] if not highest_leakage_row.empty else 0
+    highest_leakage_row = (
+        sku_summary
+        .sort_values("Estimated_Revenue_Leakage", ascending=False)
+        .head(1)
+    )
 
-    highest_stock_sku = highest_stock_row[sku_col].iloc[0] if not highest_stock_row.empty else "N/A"
-    highest_stock_value = highest_stock_row["Predicted_Stock"].iloc[0] if not highest_stock_row.empty else 0
+    highest_stock_row = (
+        sku_summary
+        .sort_values("Predicted_Stock", ascending=False)
+        .head(1)
+    )
 
-    highest_demand_sku = highest_demand_row[sku_col].iloc[0] if not highest_demand_row.empty else "N/A"
-    highest_demand_value = highest_demand_row["Predicted_Quantity"].iloc[0] if not highest_demand_row.empty else 0
+    highest_demand_row = (
+        sku_summary
+        .sort_values("Predicted_Quantity", ascending=False)
+        .head(1)
+    )
+
+    highest_leakage_sku = (
+        highest_leakage_row[sku_col].iloc[0]
+        if not highest_leakage_row.empty else "N/A"
+    )
+
+    highest_leakage_value = (
+        highest_leakage_row["Estimated_Revenue_Leakage"].iloc[0]
+        if not highest_leakage_row.empty else 0
+    )
+
+    highest_stock_sku = (
+        highest_stock_row[sku_col].iloc[0]
+        if not highest_stock_row.empty else "N/A"
+    )
+
+    highest_stock_value = (
+        highest_stock_row["Predicted_Stock"].iloc[0]
+        if not highest_stock_row.empty else 0
+    )
+
+    highest_demand_sku = (
+        highest_demand_row[sku_col].iloc[0]
+        if not highest_demand_row.empty else "N/A"
+    )
+
+    highest_demand_value = (
+        highest_demand_row["Predicted_Quantity"].iloc[0]
+        if not highest_demand_row.empty else 0
+    )
 
     st.markdown(f"""
 ### Executive AI Summary
