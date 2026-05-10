@@ -597,11 +597,9 @@ with tab1:
     c3.metric("Reorder SKUs", reorder_count)
     c4.metric("Overstock SKUs", overstock_count)
 
-    c5, c6, c7, c8 = st.columns(4)
+    c5, c6 = st.columns(2)
     c5.metric("Holding Cost", f"{total_holding_cost:,.2f}")
-    c6.metric("Target Margin %", f"{target_margin_pct}%")
-    c7.metric("Inventory Holding Cost %", f"{holding_cost_pct}%")
-    c8.metric("Anomaly Risk", "Yes" if future_anomaly_flag == 1 else "No")
+    c6.metric("Anomaly Risk", "Yes" if future_anomaly_flag == 1 else "No")
 
     combined_cols = [
         category_col,
