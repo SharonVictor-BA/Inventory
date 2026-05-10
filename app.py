@@ -574,7 +574,7 @@ tab1, tab2, tab3 = st.tabs([
 # ==================================================
 with tab1:
     st.header("Revenue Leakage & Inventory Optimization")
-    st.info("Showing prediction-based output for the selected future period.")
+    st.info(f"Showing prediction-based output for prediction date: {selected_future_date}")
 
     st.markdown(
         "**Business Impact:** Combines revenue leakage and inventory risk to identify SKUs that may lose revenue, create excess stock, or require replenishment."
@@ -666,7 +666,7 @@ with tab1:
 # ==================================================
 with tab2:
     st.header("Demand & Forecasting")
-    st.info("Showing prediction-based output for the selected future period.")
+    st.info(f"Showing prediction-based output for prediction date: {selected_future_date}")
 
     st.markdown(
         "**Business Impact:** Shows predicted demand, revenue, stock, and anomaly signals to support future planning and replenishment decisions."
@@ -756,7 +756,7 @@ with tab2:
 # ==================================================
 with tab3:
     st.header("Estimated AI Recommendations")
-    st.info("Showing prediction-based output for the selected future period.")
+    st.info(f"Showing prediction-based output for prediction date: {selected_future_date}")
 
     st.markdown(
         "**Business Impact:** Converts forecast, leakage, and inventory results into simple recommended actions for business users."
