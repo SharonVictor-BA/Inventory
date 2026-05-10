@@ -27,7 +27,7 @@ Visible business tabs:
 - Inventory Optimization Engine
 - Executive AI Summary
 
-Select a future prediction date from the sidebar, and all tabs will update for that future date.
+Select a future prediction date from the sidebar, and all KPIs, tables and charts will update for that future date.
 """)
 
 # --------------------------------------------------
@@ -71,7 +71,7 @@ if date_col:
     df = df.sort_values(date_col)
 
 # --------------------------------------------------
-# Sidebar Filters Only
+# Sidebar Filters
 # --------------------------------------------------
 st.sidebar.header("Filters")
 
@@ -129,10 +129,12 @@ quantity_col = get_default_column(["sales_qty", "quantity", "qty"])
 revenue_col = get_default_column(["sales_revenue", "revenue", "amount", "sales"])
 cost_col = get_default_column(["unit_cost", "cost"])
 price_col = get_default_column(["unit_price", "price"])
+
 stock_col = get_default_column(
     ["stock_on_hand", "inventory", "soh", "stock_qty", "stock_level"],
     exclude_words=["flag", "stockout"]
 )
+
 lead_time_col = get_default_column(["lead_time_days", "lead_time", "lead time"])
 service_col = get_default_column(["delivery_reliability", "reliability", "service"])
 
@@ -299,6 +301,7 @@ selected_future_date = st.sidebar.date_input(
 )
 
 future_prediction_label = str(selected_future_date)
+selected_date_text = future_prediction_label
 
 days_ahead = (pd.to_datetime(selected_future_date).date() - today).days
 
@@ -599,13 +602,17 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # ==================================================
 with tab1:
     st.header("Profit Impact Simulator")
-    st.info(f"Showing prediction-based output for: {future_prediction_label}")
+    st.info(f"Showing prediction-based output for: {selected_date_text}")
+
+    st.markdown(
+        f"**Business Impact:** Shows the predicted revenue and profit opportunity for the selected future date: **{selected_date_text}**."
+    )
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Future Predicted Revenue", f"{sku_summary['Future_Predicted_Revenue'].sum():,.2f}")
-    c2.metric("Future Predicted Profit", f"{sku_summary['Future_Predicted_Profit'].sum():,.2f}")
-    c3.metric("Future Avg Margin %", f"{sku_summary['Future_Predicted_Margin_%'].mean():.2f}%")
-    c4.metric("Future Anomaly Flag", "Yes" if future_anomaly_flag == 1 else "No")
+    c1.metric(f"Predicted Revenue on {selected_date_text}", f"{sku_summary['Future_Predicted_Revenue'].sum():,.2f}")
+    c2.metric(f"Predicted Profit on {selected_date_text}", f"{sku_summary['Future_Predicted_Profit'].sum():,.2f}")
+    c3.metric(f"Predicted Margin % on {selected_date_text}", f"{sku_summary['Future_Predicted_Margin_%'].mean():.2f}%")
+    c4.metric(f"Anomaly Risk on {selected_date_text}", "Yes" if future_anomaly_flag == 1 else "No")
 
     profit_df = sku_summary.sort_values("Future_Predicted_Profit", ascending=False)
 
@@ -621,7 +628,7 @@ with tab1:
         "Future_Uplift_Profit"
     ]
 
-    st.subheader("Future Profit Impact Table")
+    st.subheader(f"Future Profit Impact Table for {selected_date_text}")
     st.dataframe(profit_df[profit_cols], use_container_width=True)
 
     top_10 = profit_df.head(10)
@@ -631,17 +638,17 @@ with tab1:
     fig.add_trace(go.Bar(
         x=top_10[sku_col].astype(str),
         y=top_10["Future_Predicted_Profit"],
-        name="Future Predicted Profit"
+        name=f"Predicted Profit on {selected_date_text}"
     ))
 
     fig.add_trace(go.Bar(
         x=top_10[sku_col].astype(str),
         y=top_10["Future_Uplift_Profit"],
-        name="Future Uplift Profit"
+        name=f"Uplift Profit on {selected_date_text}"
     ))
 
     fig.update_layout(
-        title=f"Top 10 SKUs: Future Profit Impact for {future_prediction_label}",
+        title=f"Top 10 SKUs: Future Profit Impact for {selected_date_text}",
         xaxis_title="SKU",
         yaxis_title="Profit",
         barmode="group",
@@ -655,7 +662,11 @@ with tab1:
 # ==================================================
 with tab2:
     st.header("Business Action Recommendations")
-    st.info(f"Showing prediction-based output for: {future_prediction_label}")
+    st.info(f"Showing prediction-based output for: {selected_date_text}")
+
+    st.markdown(
+        f"**Business Impact:** Converts the prediction for **{selected_date_text}** into clear SKU-level actions such as promote, replenish, reprice, clear stock, or monitor."
+    )
 
     action_df = sku_summary.sort_values(
         ["Future_Action_Priority", "Future_Predicted_Profit"],
@@ -675,7 +686,7 @@ with tab2:
         "Future_Action_Priority"
     ]
 
-    st.subheader("Future Business Action Table")
+    st.subheader(f"Future Business Action Table for {selected_date_text}")
     st.dataframe(action_df[action_cols], use_container_width=True)
 
     action_summary = (
@@ -686,7 +697,7 @@ with tab2:
         .sort_values("SKU_Count", ascending=False)
     )
 
-    st.subheader("Future Action Summary")
+    st.subheader(f"Future Action Summary for {selected_date_text}")
     st.dataframe(action_summary, use_container_width=True)
 
     fig = go.Figure()
@@ -694,11 +705,11 @@ with tab2:
     fig.add_trace(go.Bar(
         x=action_summary["Future_Business_Action"],
         y=action_summary["SKU_Count"],
-        name="SKU Count"
+        name=f"SKU Count on {selected_date_text}"
     ))
 
     fig.update_layout(
-        title=f"Recommended Future Business Actions for {future_prediction_label}",
+        title=f"Recommended Future Business Actions for {selected_date_text}",
         xaxis_title="Business Action",
         yaxis_title="Number of SKUs",
         template="plotly_white"
@@ -711,7 +722,11 @@ with tab2:
 # ==================================================
 with tab3:
     st.header("Revenue Leakage Detection")
-    st.info(f"Showing prediction-based output for: {future_prediction_label}")
+    st.info(f"Showing prediction-based output for: {selected_date_text}")
+
+    st.markdown(
+        f"**Business Impact:** Identifies predicted revenue leakage risk for **{selected_date_text}**, helping the business focus on margin, stock, and revenue recovery."
+    )
 
     leakage_df = sku_summary.sort_values("Future_Estimated_Revenue_Leakage", ascending=False)
 
@@ -722,10 +737,10 @@ with tab3:
     leakage_value = leakage_df["Future_Estimated_Revenue_Leakage"].sum()
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Future Leakage Risk SKUs", leakage_count)
-    c2.metric("Future Estimated Leakage", f"{leakage_value:,.2f}")
-    c3.metric("Target Margin %", f"{target_margin_pct}%")
-    c4.metric("Future Anomaly Flag", "Yes" if future_anomaly_flag == 1 else "No")
+    c1.metric(f"Leakage Risk SKUs on {selected_date_text}", leakage_count)
+    c2.metric(f"Estimated Leakage on {selected_date_text}", f"{leakage_value:,.2f}")
+    c3.metric(f"Target Margin % on {selected_date_text}", f"{target_margin_pct}%")
+    c4.metric(f"Anomaly Risk on {selected_date_text}", "Yes" if future_anomaly_flag == 1 else "No")
 
     leakage_cols = [
         category_col,
@@ -739,7 +754,7 @@ with tab3:
         "Future_Estimated_Revenue_Leakage"
     ]
 
-    st.subheader("Future Revenue Leakage Risk Table")
+    st.subheader(f"Future Revenue Leakage Risk Table for {selected_date_text}")
     st.dataframe(leakage_df[leakage_cols], use_container_width=True)
 
     top_leakage = leakage_df.head(10)
@@ -749,11 +764,11 @@ with tab3:
     fig.add_trace(go.Bar(
         x=top_leakage[sku_col].astype(str),
         y=top_leakage["Future_Estimated_Revenue_Leakage"],
-        name="Future Estimated Leakage"
+        name=f"Estimated Leakage on {selected_date_text}"
     ))
 
     fig.update_layout(
-        title=f"Top 10 SKUs by Future Revenue Leakage for {future_prediction_label}",
+        title=f"Top 10 SKUs by Future Revenue Leakage for {selected_date_text}",
         xaxis_title="SKU",
         yaxis_title="Estimated Leakage",
         template="plotly_white"
@@ -766,7 +781,11 @@ with tab3:
 # ==================================================
 with tab4:
     st.header("Inventory Optimization Engine")
-    st.info(f"Showing prediction-based output for: {future_prediction_label}")
+    st.info(f"Showing prediction-based output for: {selected_date_text}")
+
+    st.markdown(
+        f"**Business Impact:** Shows predicted inventory risk for **{selected_date_text}**, helping reduce stockouts, overstock, and holding cost."
+    )
 
     inventory_df = sku_summary.sort_values(
         ["Future_Inventory_Status", "Future_Estimated_Holding_Cost"],
@@ -786,10 +805,10 @@ with tab4:
     ].shape[0]
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Future Reorder SKUs", reorder_count)
-    c2.metric("Future Overstock SKUs", overstock_count)
-    c3.metric("Future Balanced SKUs", balanced_count)
-    c4.metric("Future Holding Cost", f"{inventory_df['Future_Estimated_Holding_Cost'].sum():,.2f}")
+    c1.metric(f"Reorder SKUs on {selected_date_text}", reorder_count)
+    c2.metric(f"Overstock SKUs on {selected_date_text}", overstock_count)
+    c3.metric(f"Balanced SKUs on {selected_date_text}", balanced_count)
+    c4.metric(f"Holding Cost on {selected_date_text}", f"{inventory_df['Future_Estimated_Holding_Cost'].sum():,.2f}")
 
     inventory_cols = [
         category_col,
@@ -803,7 +822,7 @@ with tab4:
         "Future_Estimated_Holding_Cost"
     ]
 
-    st.subheader("Future Inventory Optimisation Table")
+    st.subheader(f"Future Inventory Optimisation Table for {selected_date_text}")
     st.dataframe(inventory_df[inventory_cols], use_container_width=True)
 
     inventory_summary = (
@@ -818,11 +837,11 @@ with tab4:
     fig.add_trace(go.Bar(
         x=inventory_summary["Future_Inventory_Status"],
         y=inventory_summary["SKU_Count"],
-        name="SKU Count"
+        name=f"SKU Count on {selected_date_text}"
     ))
 
     fig.update_layout(
-        title=f"Future Inventory Status Summary for {future_prediction_label}",
+        title=f"Future Inventory Status Summary for {selected_date_text}",
         xaxis_title="Inventory Status",
         yaxis_title="Number of SKUs",
         template="plotly_white"
@@ -835,7 +854,11 @@ with tab4:
 # ==================================================
 with tab5:
     st.header("Executive AI Summary")
-    st.info(f"Showing prediction-based output for: {future_prediction_label}")
+    st.info(f"Showing prediction-based output for: {selected_date_text}")
+
+    st.markdown(
+        f"**Business Impact:** Provides an executive-level summary of predicted profit, leakage, inventory, and anomaly risk for **{selected_date_text}**."
+    )
 
     future_total_revenue = sku_summary["Future_Predicted_Revenue"].sum()
     future_total_profit = sku_summary["Future_Predicted_Profit"].sum()
@@ -864,25 +887,25 @@ with tab5:
     leakage_value = leakage_sku_row["Future_Estimated_Revenue_Leakage"].iloc[0] if not leakage_sku_row.empty else 0
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Future Revenue", f"{future_total_revenue:,.2f}")
-    c2.metric("Future Profit", f"{future_total_profit:,.2f}")
-    c3.metric("Future Margin %", f"{future_avg_margin:.2f}%")
-    c4.metric("Future Leakage", f"{future_total_leakage:,.2f}")
+    c1.metric(f"Revenue on {selected_date_text}", f"{future_total_revenue:,.2f}")
+    c2.metric(f"Profit on {selected_date_text}", f"{future_total_profit:,.2f}")
+    c3.metric(f"Margin % on {selected_date_text}", f"{future_avg_margin:.2f}%")
+    c4.metric(f"Leakage on {selected_date_text}", f"{future_total_leakage:,.2f}")
 
     st.markdown(f"""
-### Executive AI Summary for {future_prediction_label}
+### Executive AI Summary for {selected_date_text}
 
-The selected future period is expected to generate predicted revenue of **{future_total_revenue:,.2f}** and predicted profit of **{future_total_profit:,.2f}**.
+The selected future date is expected to generate predicted revenue of **{future_total_revenue:,.2f}** and predicted profit of **{future_total_profit:,.2f}**.
 
 The predicted average margin is **{future_avg_margin:.2f}%**.
 
 The estimated future revenue leakage is **{future_total_leakage:,.2f}**.
 
-Future anomaly flag: **{"Yes" if future_anomaly_flag == 1 else "No"}**
+Future anomaly risk on **{selected_date_text}**: **{"Yes" if future_anomaly_flag == 1 else "No"}**
 
 ### Best Commercial Opportunity
 
-The strongest future profit-contributing SKU is **{best_sku}**, with predicted profit of **{best_profit:,.2f}**.
+The strongest future profit-contributing SKU on **{selected_date_text}** is **{best_sku}**, with predicted profit of **{best_profit:,.2f}**.
 
 Recommended action:
 - Prioritise this SKU for promotion.
@@ -892,7 +915,7 @@ Recommended action:
 
 ### Revenue Leakage Risk
 
-The SKU with the highest future leakage risk is **{leakage_sku}**, with estimated leakage of **{leakage_value:,.2f}**.
+The SKU with the highest future leakage risk on **{selected_date_text}** is **{leakage_sku}**, with estimated leakage of **{leakage_value:,.2f}**.
 
 Recommended action:
 - Review pricing.
@@ -900,7 +923,7 @@ Recommended action:
 - Investigate slow-moving stock.
 - Consider promotional clearance.
 
-### Inventory Position
+### Inventory Position on {selected_date_text}
 
 - Future reorder required SKUs: **{reorder_count}**
 - Future possible overstock SKUs: **{overstock_count}**
@@ -909,7 +932,7 @@ Recommended action:
 ### CEO / CTO Level Recommendation
 
 1. **Grow profitable SKUs**  
-   Promote SKUs with high predicted revenue and high predicted profit.
+   Promote SKUs with high predicted revenue and high predicted profit for **{selected_date_text}**.
 
 2. **Fix future leakage areas**  
    Investigate SKUs with low predicted margin, low predicted revenue, or overstock risk.
@@ -931,11 +954,11 @@ Recommended action:
             "Forecast Governance"
         ],
         "Recommended Action": [
-            "Promote high predicted profit SKUs and protect stock availability",
-            "Investigate SKUs with future leakage risk",
-            "Reorder understocked SKUs and reduce overstock exposure",
-            "Monitor abnormal future KPI behaviour",
-            "Review forecast outputs with business users"
+            f"Promote high predicted profit SKUs for {selected_date_text} and protect stock availability",
+            f"Investigate SKUs with future leakage risk on {selected_date_text}",
+            f"Reorder understocked SKUs and reduce overstock exposure for {selected_date_text}",
+            f"Monitor abnormal future KPI behaviour for {selected_date_text}",
+            "Review forecast outputs periodically with business users"
         ],
         "Business Benefit": [
             "Revenue and profit uplift",
@@ -946,5 +969,5 @@ Recommended action:
         ]
     })
 
-    st.subheader("Top Executive Actions")
+    st.subheader(f"Top Executive Actions for {selected_date_text}")
     st.dataframe(executive_actions, use_container_width=True)
