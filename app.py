@@ -643,7 +643,6 @@ with tab1:
     c1.metric("Leakage Risk SKUs", leakage_count)
     c2.metric("Reorder SKUs", reorder_count)
     c3.metric("Overstock SKUs", overstock_count)
-    )
 
     combined_cols = [
         category_col,
