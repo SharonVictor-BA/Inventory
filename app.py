@@ -591,15 +591,10 @@ with tab1:
     total_leakage = combined_df["Estimated_Revenue_Leakage"].sum()
     total_holding_cost = combined_df["Estimated_Holding_Cost"].sum()
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     c1.metric("Leakage Risk SKUs", leakage_count)
-    c2.metric("Estimated Leakage", f"{total_leakage:,.2f}")
-    c3.metric("Reorder SKUs", reorder_count)
-    c4.metric("Overstock SKUs", overstock_count)
-
-    c5, c6 = st.columns(2)
-    c5.metric("Holding Cost", f"{total_holding_cost:,.2f}")
-    c6.metric("Anomaly Risk", "Yes" if future_anomaly_flag == 1 else "No")
+    c2.metric("Reorder SKUs", reorder_count)
+    c3.metric("Overstock SKUs", overstock_count)
 
     combined_cols = [
         category_col,
