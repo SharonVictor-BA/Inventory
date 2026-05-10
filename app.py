@@ -11,11 +11,11 @@ from statsmodels.tsa.arima.model import ARIMA
 # App Config
 # --------------------------------------------------
 st.set_page_config(
-    page_title="Retail Revenue Leakage & Inventory Optimization App",
+    page_title="SMART RETAIL: Retail Analytics for Inventory Optimization",
     layout="wide"
 )
 
-st.title("Retail Revenue Leakage & Inventory Optimization App")
+st.title("SMART RETAIL: Retail Analytics for Inventory Optimization")
 
 st.markdown("""
 This application focuses on three business outcomes:
