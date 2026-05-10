@@ -11,22 +11,23 @@ from statsmodels.tsa.arima.model import ARIMA
 # App Config
 # --------------------------------------------------
 st.set_page_config(
-    page_title="Smart Retail PCA Forecasting & Monitoring",
+    page_title="Smart Retail Executive Intelligence App",
     layout="wide"
 )
 
-st.title("Smart Retail PCA Forecasting, Monitoring & Anomaly Detection")
+st.title("Smart Retail Executive Intelligence App")
 
 st.markdown("""
-This app uses **PCA-based intelligence** to analyse retail inventory behaviour.
+This application converts retail transaction and inventory data into executive-level business insights.
 
-It supports:
-- Future KPI prediction with confidence bands
-- PCA interpretation
-- Monitoring using SPE, T² and G₂
-- Future anomaly prediction
-- Category and SKU-level business impact analysis
-- AI-based recommendations
+The app focuses on:
+- Profit impact simulation
+- Business action recommendations
+- Revenue leakage detection
+- Inventory optimisation
+- Executive AI summary
+
+Backend intelligence such as PCA forecasting, anomaly detection and risk classification runs behind the scenes.
 """)
 
 # --------------------------------------------------
@@ -53,7 +54,12 @@ for col in df.columns:
     if category_col is None and "category" in lower_col:
         category_col = col
 
-    if sku_col is None and ("sku" in lower_col or "item" in lower_col or "product" in lower_col):
+    if sku_col is None and (
+        "sku" in lower_col
+        or "item" in lower_col
+        or "product" in lower_col
+        or "stockcode" in lower_col
+    ):
         sku_col = col
 
     if date_col is None and "date" in lower_col:
@@ -71,7 +77,6 @@ st.sidebar.header("Filters")
 
 filtered_df = df.copy()
 
-# Historical Date Filter
 if date_col:
     min_date = filtered_df[date_col].min().date()
     max_date = filtered_df[date_col].max().date()
@@ -85,33 +90,24 @@ if date_col:
 
     if isinstance(selected_date_range, tuple) and len(selected_date_range) == 2:
         start_date, end_date = selected_date_range
-
         filtered_df = filtered_df[
             (filtered_df[date_col].dt.date >= start_date) &
             (filtered_df[date_col].dt.date <= end_date)
         ]
-else:
-    st.sidebar.info("No Date column found. App will use future step numbers.")
 
-# Category Filter
 if category_col:
     category_options = ["All"] + sorted(filtered_df[category_col].dropna().astype(str).unique())
     selected_category = st.sidebar.selectbox("Select Category", category_options)
 
     if selected_category != "All":
         filtered_df = filtered_df[filtered_df[category_col].astype(str) == selected_category]
-else:
-    st.sidebar.info("No Category column found.")
 
-# SKU Filter
 if sku_col:
     sku_options = ["All"] + sorted(filtered_df[sku_col].dropna().astype(str).unique())
-    selected_sku = st.sidebar.selectbox("Select SKU_ID", sku_options)
+    selected_sku = st.sidebar.selectbox("Select SKU / Item / Product", sku_options)
 
     if selected_sku != "All":
         filtered_df = filtered_df[filtered_df[sku_col].astype(str) == selected_sku]
-else:
-    st.sidebar.info("No SKU_ID / Item / Product column found.")
 
 if filtered_df.empty:
     st.error("No records available for the selected filters.")
@@ -120,25 +116,107 @@ if filtered_df.empty:
 st.sidebar.success(f"Filtered records: {len(filtered_df)}")
 
 # --------------------------------------------------
-# KPI Selection
+# Numeric Column Setup
 # --------------------------------------------------
 numeric_cols = filtered_df.select_dtypes(include=np.number).columns.tolist()
 
-default_features = [
-    col for col in [
-        "sales_qty",
-        "sales_revenue",
-        "lead_time_days",
-        "delivery_reliability",
-        "obsolescence_risk"
-    ] if col in numeric_cols
-]
+if len(numeric_cols) < 3:
+    st.error("Dataset must contain at least 3 numeric columns.")
+    st.stop()
 
-if len(default_features) < 3:
-    default_features = numeric_cols[:5]
+st.sidebar.header("Column Mapping")
+
+def get_default_column(possible_names):
+    for name in possible_names:
+        for col in numeric_cols:
+            if name.lower() in col.lower():
+                return col
+    return "None"
+
+quantity_col = st.sidebar.selectbox(
+    "Quantity Column",
+    ["None"] + numeric_cols,
+    index=(["None"] + numeric_cols).index(get_default_column(["quantity", "qty", "sales_qty"]))
+)
+
+revenue_col = st.sidebar.selectbox(
+    "Revenue Column",
+    ["None"] + numeric_cols,
+    index=(["None"] + numeric_cols).index(get_default_column(["revenue", "sales_revenue", "amount"]))
+)
+
+cost_col = st.sidebar.selectbox(
+    "Cost Column",
+    ["None"] + numeric_cols,
+    index=(["None"] + numeric_cols).index(get_default_column(["cost", "unit_cost"]))
+)
+
+price_col = st.sidebar.selectbox(
+    "Unit Price Column",
+    ["None"] + numeric_cols,
+    index=(["None"] + numeric_cols).index(get_default_column(["price", "unit_price"]))
+)
+
+stock_col = st.sidebar.selectbox(
+    "Stock / Inventory Column",
+    ["None"] + numeric_cols,
+    index=(["None"] + numeric_cols).index(get_default_column(["stock", "inventory", "soh"]))
+)
+
+lead_time_col = st.sidebar.selectbox(
+    "Lead Time Column",
+    ["None"] + numeric_cols,
+    index=(["None"] + numeric_cols).index(get_default_column(["lead_time", "lead time"]))
+)
+
+service_col = st.sidebar.selectbox(
+    "Delivery Reliability / Service Column",
+    ["None"] + numeric_cols,
+    index=(["None"] + numeric_cols).index(get_default_column(["delivery", "reliability", "service"]))
+)
+
+# --------------------------------------------------
+# Business Assumptions
+# --------------------------------------------------
+st.sidebar.header("Business Assumptions")
+
+future_steps = st.sidebar.slider("Future Prediction Periods", 5, 30, 10)
+
+threshold_percentile = st.sidebar.slider(
+    "Anomaly Threshold Percentile",
+    90,
+    99,
+    95
+)
+
+expected_uplift_pct = st.sidebar.slider(
+    "Expected Sales Uplift %",
+    1,
+    100,
+    10
+)
+
+target_margin_pct = st.sidebar.slider(
+    "Target Margin %",
+    1,
+    90,
+    25
+)
+
+holding_cost_pct = st.sidebar.slider(
+    "Inventory Holding Cost %",
+    1,
+    50,
+    10
+)
+
+# --------------------------------------------------
+# Feature Selection for Backend PCA
+# --------------------------------------------------
+default_features = numeric_cols[:5]
 
 features = st.sidebar.multiselect(
-    "Select KPI Features",
+    "Backend KPI Features for PCA / Forecasting",
     numeric_cols,
     default=default_features
 )
@@ -147,27 +225,8 @@ if len(features) < 3:
     st.error("Please select at least 3 numeric KPI features.")
     st.stop()
 
-impact_kpi = st.sidebar.selectbox(
-    "Select KPI for Top / Bottom SKU Impact",
-    features
-)
-
-future_steps = st.sidebar.slider(
-    "Future Prediction Periods",
-    min_value=5,
-    max_value=30,
-    value=10
-)
-
-threshold_percentile = st.sidebar.slider(
-    "Anomaly Threshold Percentile",
-    min_value=90,
-    max_value=99,
-    value=95
-)
-
 # --------------------------------------------------
-# Prepare Data
+# Backend PCA, Forecasting and Anomaly Logic
 # --------------------------------------------------
 X = filtered_df[features].copy()
 X = X.apply(pd.to_numeric, errors="coerce")
@@ -187,99 +246,29 @@ pcs = pca.fit_transform(X_scaled)
 pc_names = [f"PC{i+1}" for i in range(n_components)]
 pc_df = pd.DataFrame(pcs, columns=pc_names)
 
-# --------------------------------------------------
-# Forecast PCs using ARIMA
-# --------------------------------------------------
+# Forecast PCA components
 pc_forecasts = {}
-pc_lower = {}
-pc_upper = {}
 
 for col in pc_df.columns:
     try:
         model = ARIMA(pc_df[col], order=(2, 1, 2))
         model_fit = model.fit()
-
         forecast_result = model_fit.get_forecast(steps=future_steps)
-        forecast_mean = forecast_result.predicted_mean
-        conf_int = forecast_result.conf_int(alpha=0.05)
-
-        pc_forecasts[col] = forecast_mean.values
-        pc_lower[col] = conf_int.iloc[:, 0].values
-        pc_upper[col] = conf_int.iloc[:, 1].values
-
+        pc_forecasts[col] = forecast_result.predicted_mean.values
     except Exception:
-        last_value = pc_df[col].iloc[-1]
-        std_value = pc_df[col].std()
-
-        pc_forecasts[col] = np.repeat(last_value, future_steps)
-        pc_lower[col] = np.repeat(last_value - 1.96 * std_value, future_steps)
-        pc_upper[col] = np.repeat(last_value + 1.96 * std_value, future_steps)
+        pc_forecasts[col] = np.repeat(pc_df[col].iloc[-1], future_steps)
 
 pc_forecast_df = pd.DataFrame(pc_forecasts)
-pc_lower_df = pd.DataFrame(pc_lower)
-pc_upper_df = pd.DataFrame(pc_upper)
 
-# Convert forecasted PCs back to original KPI space
 future_scaled = pca.inverse_transform(pc_forecast_df)
 future_values = scaler.inverse_transform(future_scaled)
 future_df = pd.DataFrame(future_values, columns=features)
 
-future_lower_scaled = pca.inverse_transform(pc_lower_df)
-future_upper_scaled = pca.inverse_transform(pc_upper_df)
-
-future_lower_values = scaler.inverse_transform(future_lower_scaled)
-future_upper_values = scaler.inverse_transform(future_upper_scaled)
-
-future_lower_df = pd.DataFrame(
-    future_lower_values,
-    columns=[f"{col}_Lower_95" for col in features]
-)
-
-future_upper_df = pd.DataFrame(
-    future_upper_values,
-    columns=[f"{col}_Upper_95" for col in features]
-)
-
-# --------------------------------------------------
-# Future Dates / Steps
-# --------------------------------------------------
-if date_col:
-    last_date = filtered_df[date_col].max()
-
-    inferred_freq = pd.infer_freq(filtered_df[date_col].dropna())
-
-    if inferred_freq is None:
-        inferred_freq = "W"
-
-    future_dates = pd.date_range(
-        start=last_date,
-        periods=future_steps + 1,
-        freq=inferred_freq
-    )[1:]
-
-    future_df.insert(0, "Date", future_dates)
-    future_lower_df.insert(0, "Date", future_dates)
-    future_upper_df.insert(0, "Date", future_dates)
-
-    current_values = filtered_df[[date_col] + features].tail(future_steps).reset_index(drop=True)
-    current_values.rename(columns={date_col: "Date"}, inplace=True)
-
-else:
-    future_df.insert(0, "Step", np.arange(1, future_steps + 1))
-    future_lower_df.insert(0, "Step", np.arange(1, future_steps + 1))
-    future_upper_df.insert(0, "Step", np.arange(1, future_steps + 1))
-
-    current_values = X.tail(future_steps).reset_index(drop=True)
-    current_values.insert(0, "Step", np.arange(1, future_steps + 1))
-
-# --------------------------------------------------
-# Monitoring Metrics
-# --------------------------------------------------
+# Monitoring metrics
 X_hat = pca.inverse_transform(pcs)
 residual = X_scaled - X_hat
 
 spe = np.sum(residual ** 2, axis=1)
-
 eigen_vals = pca.explained_variance_
 t2 = np.sum((pcs ** 2) / eigen_vals, axis=1)
 
@@ -301,15 +290,10 @@ results = pd.DataFrame({
     "SPE": spe,
     "T2": t2,
     "G2": g2,
-    "SPE_Threshold": spe_threshold,
-    "T2_Threshold": t2_threshold,
-    "G2_Threshold": g2_threshold,
     "Anomaly": anomaly.astype(int)
 })
 
-# --------------------------------------------------
-# Future Anomaly Prediction
-# --------------------------------------------------
+# Future anomaly prediction
 future_pcs = pc_forecast_df.values
 future_scaled_reconstructed = pca.inverse_transform(future_pcs)
 future_residual = future_scaled - future_scaled_reconstructed
@@ -317,9 +301,11 @@ future_residual = future_scaled - future_scaled_reconstructed
 future_spe = np.sum(future_residual ** 2, axis=1)
 future_t2 = np.sum((future_pcs ** 2) / eigen_vals, axis=1)
 
-future_spe_norm = (future_spe - np.min(spe)) / (np.max(spe) - np.min(spe) + 1e-9)
-future_t2_norm = (future_t2 - np.min(t2)) / (np.max(t2) - np.min(t2) + 1e-9)
-future_g2 = 0.5 * future_spe_norm + 0.5 * future_t2_norm
+future_g2 = 0.5 * (
+    (future_spe - np.min(spe)) / (np.max(spe) - np.min(spe) + 1e-9)
+) + 0.5 * (
+    (future_t2 - np.min(t2)) / (np.max(t2) - np.min(t2) + 1e-9)
+)
 
 future_anomaly = (
     (future_spe > spe_threshold) |
@@ -328,659 +314,606 @@ future_anomaly = (
 )
 
 future_anomaly_df = pd.DataFrame({
-    "SPE_Forecast": future_spe,
-    "T2_Forecast": future_t2,
-    "G2_Forecast": future_g2,
+    "Future_SPE": future_spe,
+    "Future_T2": future_t2,
+    "Future_G2": future_g2,
     "Future_Anomaly": future_anomaly.astype(int)
 })
 
-if "Date" in future_df.columns:
-    future_anomaly_df.insert(0, "Date", future_df["Date"])
+# --------------------------------------------------
+# Business Data Preparation
+# --------------------------------------------------
+def clean_col(col):
+    return None if col == "None" else col
+
+quantity_col = clean_col(quantity_col)
+revenue_col = clean_col(revenue_col)
+cost_col = clean_col(cost_col)
+price_col = clean_col(price_col)
+stock_col = clean_col(stock_col)
+lead_time_col = clean_col(lead_time_col)
+service_col = clean_col(service_col)
+
+business_df = filtered_df.copy()
+
+if sku_col is None:
+    business_df["SKU"] = "Unknown SKU"
+    sku_col = "SKU"
+
+if category_col is None:
+    business_df["Category"] = "Unknown Category"
+    category_col = "Category"
+
+if quantity_col:
+    business_df["Business_Quantity"] = pd.to_numeric(business_df[quantity_col], errors="coerce").fillna(0)
 else:
-    future_anomaly_df.insert(0, "Step", future_df["Step"])
+    business_df["Business_Quantity"] = 1
 
-# --------------------------------------------------
-# Top / Bottom SKU Impact
-# --------------------------------------------------
-def get_sku_impact_table(data, sku_col, category_col, kpi):
-    if sku_col is None:
-        return None, None
-
-    group_cols = [sku_col]
-
-    if category_col and category_col in data.columns:
-        group_cols.insert(0, category_col)
-
-    sku_summary = (
-        data.groupby(group_cols)[kpi]
-        .agg(["mean", "sum", "min", "max", "count"])
-        .reset_index()
-        .sort_values("mean", ascending=False)
+if revenue_col:
+    business_df["Business_Revenue"] = pd.to_numeric(business_df[revenue_col], errors="coerce").fillna(0)
+elif price_col:
+    business_df["Business_Revenue"] = (
+        pd.to_numeric(business_df[price_col], errors="coerce").fillna(0)
+        * business_df["Business_Quantity"]
     )
+else:
+    business_df["Business_Revenue"] = 0
 
-    top_3 = sku_summary.head(3)
-    bottom_3 = sku_summary.tail(3).sort_values("mean", ascending=True)
+if cost_col:
+    business_df["Business_Cost"] = (
+        pd.to_numeric(business_df[cost_col], errors="coerce").fillna(0)
+        * business_df["Business_Quantity"]
+    )
+else:
+    business_df["Business_Cost"] = business_df["Business_Revenue"] * 0.65
 
-    return top_3, bottom_3
+if stock_col:
+    business_df["Business_Stock"] = pd.to_numeric(business_df[stock_col], errors="coerce").fillna(0)
+else:
+    business_df["Business_Stock"] = business_df["Business_Quantity"] * 2
 
-top_skus, bottom_skus = get_sku_impact_table(
-    filtered_df,
-    sku_col,
-    category_col,
-    impact_kpi
+if lead_time_col:
+    business_df["Business_Lead_Time"] = pd.to_numeric(business_df[lead_time_col], errors="coerce").fillna(0)
+else:
+    business_df["Business_Lead_Time"] = 7
+
+if service_col:
+    business_df["Business_Service_Level"] = pd.to_numeric(business_df[service_col], errors="coerce").fillna(0)
+else:
+    business_df["Business_Service_Level"] = 95
+
+business_df["Business_Profit"] = business_df["Business_Revenue"] - business_df["Business_Cost"]
+
+business_df["Business_Margin_%"] = np.where(
+    business_df["Business_Revenue"] > 0,
+    business_df["Business_Profit"] / business_df["Business_Revenue"] * 100,
+    0
 )
 
 # --------------------------------------------------
-# PCA Explanation
+# SKU Business Summary
 # --------------------------------------------------
-pc_explanation = {
-    "PC1": {
-        "name": "Demand Intelligence",
-        "meaning": "Captures sales intensity, demand movement, revenue behaviour, and profitability signals.",
-        "business_value": "Helps identify demand spikes, demand drops, and revenue-impacting changes."
-    },
-    "PC2": {
-        "name": "Supply Intelligence",
-        "meaning": "Captures lead-time behaviour, supplier reliability, and supply-side volatility.",
-        "business_value": "Helps detect supplier delay, logistics risk, and replenishment instability."
-    },
-    "PC3": {
-        "name": "Operational Intelligence",
-        "meaning": "Captures operational stability, execution consistency, and recurring process deviations.",
-        "business_value": "Helps identify operational inefficiencies and service-level degradation."
-    }
-}
+sku_summary = (
+    business_df
+    .groupby([category_col, sku_col], dropna=False)
+    .agg(
+        Total_Quantity=("Business_Quantity", "sum"),
+        Total_Revenue=("Business_Revenue", "sum"),
+        Total_Cost=("Business_Cost", "sum"),
+        Total_Profit=("Business_Profit", "sum"),
+        Avg_Margin_Percent=("Business_Margin_%", "mean"),
+        Avg_Stock=("Business_Stock", "mean"),
+        Avg_Lead_Time=("Business_Lead_Time", "mean"),
+        Avg_Service_Level=("Business_Service_Level", "mean"),
+        Record_Count=("Business_Revenue", "count")
+    )
+    .reset_index()
+)
+
+sku_summary["Revenue_Per_Unit"] = np.where(
+    sku_summary["Total_Quantity"] > 0,
+    sku_summary["Total_Revenue"] / sku_summary["Total_Quantity"],
+    0
+)
+
+sku_summary["Profit_Per_Unit"] = np.where(
+    sku_summary["Total_Quantity"] > 0,
+    sku_summary["Total_Profit"] / sku_summary["Total_Quantity"],
+    0
+)
+
+sku_summary["Expected_Uplift_Revenue"] = (
+    sku_summary["Total_Revenue"] * expected_uplift_pct / 100
+)
+
+sku_summary["Expected_Uplift_Profit"] = (
+    sku_summary["Total_Profit"] * expected_uplift_pct / 100
+)
 
 # --------------------------------------------------
-# Tabs
+# Revenue Leakage Logic
 # --------------------------------------------------
-tab1, tab2, tab3, tab4 = st.tabs([
-    "1. Prediction",
-    "2. PCA",
-    "3. Monitoring",
-    "4. Anomaly Detection"
+revenue_threshold = sku_summary["Total_Revenue"].median()
+stock_threshold = sku_summary["Avg_Stock"].median()
+
+sku_summary["Revenue_Leakage_Flag"] = np.where(
+    (
+        (sku_summary["Total_Revenue"] < revenue_threshold) |
+        (sku_summary["Avg_Margin_Percent"] < target_margin_pct) |
+        (sku_summary["Avg_Stock"] > stock_threshold)
+    ),
+    "Leakage Risk",
+    "Healthy"
+)
+
+sku_summary["Revenue_Leakage_Reason"] = np.select(
+    [
+        sku_summary["Avg_Margin_Percent"] < target_margin_pct,
+        sku_summary["Total_Revenue"] < revenue_threshold,
+        sku_summary["Avg_Stock"] > stock_threshold
+    ],
+    [
+        "Low margin compared to target",
+        "Low revenue contribution",
+        "Possible excess stock or slow movement"
+    ],
+    default="No major leakage signal"
+)
+
+sku_summary["Estimated_Revenue_Leakage"] = np.where(
+    sku_summary["Revenue_Leakage_Flag"] == "Leakage Risk",
+    np.maximum(
+        sku_summary["Total_Revenue"] * 0.10,
+        sku_summary["Avg_Stock"] * sku_summary["Revenue_Per_Unit"] * 0.05
+    ),
+    0
+)
+
+# --------------------------------------------------
+# Inventory Optimisation Logic
+# --------------------------------------------------
+sku_summary["Estimated_Demand_Next_Period"] = (
+    sku_summary["Total_Quantity"] / sku_summary["Record_Count"].replace(0, 1)
+)
+
+sku_summary["Recommended_Safety_Stock"] = (
+    sku_summary["Estimated_Demand_Next_Period"]
+    * (sku_summary["Avg_Lead_Time"] / 7)
+    * 0.5
+)
+
+sku_summary["Recommended_Reorder_Point"] = (
+    sku_summary["Estimated_Demand_Next_Period"]
+    * (sku_summary["Avg_Lead_Time"] / 7)
+) + sku_summary["Recommended_Safety_Stock"]
+
+sku_summary["Inventory_Status"] = np.select(
+    [
+        sku_summary["Avg_Stock"] < sku_summary["Recommended_Reorder_Point"],
+        sku_summary["Avg_Stock"] > sku_summary["Recommended_Reorder_Point"] * 2
+    ],
+    [
+        "Reorder Required",
+        "Possible Overstock"
+    ],
+    default="Balanced"
+)
+
+sku_summary["Inventory_Action"] = np.select(
+    [
+        sku_summary["Inventory_Status"] == "Reorder Required",
+        sku_summary["Inventory_Status"] == "Possible Overstock"
+    ],
+    [
+        "Increase replenishment to avoid stockout",
+        "Reduce purchase quantity or run promotion"
+    ],
+    default="Maintain current inventory level"
+)
+
+sku_summary["Estimated_Holding_Cost"] = (
+    sku_summary["Avg_Stock"]
+    * sku_summary["Revenue_Per_Unit"]
+    * holding_cost_pct / 100
+)
+
+# --------------------------------------------------
+# Business Action Logic
+# --------------------------------------------------
+sku_summary["Business_Action"] = np.select(
+    [
+        (
+            (sku_summary["Total_Revenue"] >= revenue_threshold) &
+            (sku_summary["Avg_Margin_Percent"] >= target_margin_pct)
+        ),
+        (
+            (sku_summary["Total_Revenue"] >= revenue_threshold) &
+            (sku_summary["Avg_Margin_Percent"] < target_margin_pct)
+        ),
+        (
+            (sku_summary["Revenue_Leakage_Flag"] == "Leakage Risk") &
+            (sku_summary["Inventory_Status"] == "Possible Overstock")
+        ),
+        sku_summary["Inventory_Status"] == "Reorder Required"
+    ],
+    [
+        "Promote / Prioritise SKU",
+        "Review pricing or cost",
+        "Clear excess stock with promotion",
+        "Replenish inventory"
+    ],
+    default="Monitor"
+)
+
+sku_summary["Action_Priority"] = np.select(
+    [
+        sku_summary["Business_Action"].isin(["Promote / Prioritise SKU", "Replenish inventory"]),
+        sku_summary["Business_Action"].isin(["Review pricing or cost", "Clear excess stock with promotion"])
+    ],
+    [
+        "High",
+        "Medium"
+    ],
+    default="Low"
+)
+
+# --------------------------------------------------
+# Visible Tabs Only
+# --------------------------------------------------
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "1. Profit Impact Simulator",
+    "2. Business Action Recommendations",
+    "3. Revenue Leakage Detection",
+    "4. Inventory Optimization Engine",
+    "5. Executive AI Summary"
 ])
 
 # ==================================================
-# TAB 1 — PREDICTION
+# TAB 1 — Profit Impact Simulator
 # ==================================================
 with tab1:
-    st.header("Future KPI Prediction")
+    st.header("Profit Impact Simulator")
 
     st.markdown("""
-This tab forecasts future KPI values beyond the current dataset.  
-The model forecasts PCA components first and then reconstructs future KPI values.
+This tab estimates the revenue and profit impact if selected SKUs receive additional sales uplift.
 """)
 
-    # Future Date or Step Selection
-    if "Date" in future_df.columns:
-        st.subheader("Future Date Selection")
+    total_revenue = sku_summary["Total_Revenue"].sum()
+    total_profit = sku_summary["Total_Profit"].sum()
+    avg_margin = sku_summary["Avg_Margin_Percent"].mean()
 
-        future_df["Date_only"] = pd.to_datetime(future_df["Date"]).dt.date
-        future_anomaly_df["Date_only"] = pd.to_datetime(future_anomaly_df["Date"]).dt.date
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Revenue", f"{total_revenue:,.2f}")
+    c2.metric("Total Profit", f"{total_profit:,.2f}")
+    c3.metric("Average Margin %", f"{avg_margin:.2f}%")
+    c4.metric("Sales Uplift Assumption", f"{expected_uplift_pct}%")
 
-        min_future_date = future_df["Date_only"].min()
-        max_future_date = future_df["Date_only"].max()
+    profit_df = sku_summary.sort_values("Total_Profit", ascending=False)
 
-        selected_future_date = st.date_input(
-            "Select Future Date for Prediction Insight",
-            value=min_future_date,
-            min_value=min_future_date,
-            max_value=max_future_date
-        )
+    profit_cols = [
+        category_col,
+        sku_col,
+        "Total_Quantity",
+        "Total_Revenue",
+        "Total_Cost",
+        "Total_Profit",
+        "Avg_Margin_Percent",
+        "Expected_Uplift_Revenue",
+        "Expected_Uplift_Profit"
+    ]
 
-        selected_future_row = future_df[
-            future_df["Date_only"] == selected_future_date
-        ].drop(columns=["Date_only"], errors="ignore")
+    st.subheader("SKU-Level Profit Impact Table")
+    st.dataframe(profit_df[profit_cols], use_container_width=True)
 
-        selected_future_anomaly = future_anomaly_df[
-            future_anomaly_df["Date_only"] == selected_future_date
-        ].drop(columns=["Date_only"], errors="ignore")
-
-    else:
-        st.subheader("Future Step Selection")
-
-        selected_future_step = st.selectbox(
-            "Select Future Step for Prediction Insight",
-            future_df["Step"].tolist()
-        )
-
-        selected_future_row = future_df[
-            future_df["Step"] == selected_future_step
-        ]
-
-        selected_future_anomaly = future_anomaly_df[
-            future_anomaly_df["Step"] == selected_future_step
-        ]
-
-    selected_kpi = st.selectbox("Select KPI to compare", features)
-
-    x_current = current_values["Date"] if "Date" in current_values.columns else current_values["Step"]
-    x_future = future_df["Date"] if "Date" in future_df.columns else future_df["Step"]
-
-    lower_col = f"{selected_kpi}_Lower_95"
-    upper_col = f"{selected_kpi}_Upper_95"
+    top_10 = profit_df.head(10)
 
     fig = go.Figure()
 
-    fig.add_trace(go.Scatter(
-        x=x_current,
-        y=current_values[selected_kpi],
-        mode="lines+markers",
-        name=f"Current {selected_kpi}"
+    fig.add_trace(go.Bar(
+        x=top_10[sku_col].astype(str),
+        y=top_10["Total_Profit"],
+        name="Current Profit"
     ))
 
-    fig.add_trace(go.Scatter(
-        x=x_future,
-        y=future_df[selected_kpi],
-        mode="lines+markers",
-        name=f"Future {selected_kpi}"
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=x_future,
-        y=future_upper_df[upper_col],
-        mode="lines",
-        line=dict(width=0),
-        showlegend=False,
-        name="Upper 95%"
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=x_future,
-        y=future_lower_df[lower_col],
-        mode="lines",
-        fill="tonexty",
-        line=dict(width=0),
-        name="95% Confidence Band"
+    fig.add_trace(go.Bar(
+        x=top_10[sku_col].astype(str),
+        y=top_10["Expected_Uplift_Profit"],
+        name="Expected Additional Profit"
     ))
 
     fig.update_layout(
-        title=f"Current vs Future Forecast with Confidence Band: {selected_kpi}",
-        xaxis_title="Date" if "Date" in future_df.columns else "Future Step",
-        yaxis_title=selected_kpi,
-        hovermode="x unified",
+        title="Top 10 SKUs: Current Profit vs Expected Additional Profit",
+        xaxis_title="SKU",
+        yaxis_title="Profit",
+        barmode="group",
         template="plotly_white"
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # Graph explanation under Prediction graph
-    selected_future_mean = future_df[selected_kpi].mean()
-    selected_current_mean = current_values[selected_kpi].mean()
-
-    future_upper_mean = future_upper_df[upper_col].mean()
-    future_lower_mean = future_lower_df[lower_col].mean()
-    confidence_width = future_upper_mean - future_lower_mean
-
-    if selected_future_mean > selected_current_mean:
-        trend_text = "Future forecast is expected to increase compared to recent historical values."
-    elif selected_future_mean < selected_current_mean:
-        trend_text = "Future forecast is expected to decrease compared to recent historical values."
-    else:
-        trend_text = "Future forecast is expected to remain broadly stable."
-
-    if confidence_width > abs(selected_future_mean) * 0.5:
-        uncertainty_text = "The confidence band is wide, indicating higher uncertainty in the prediction."
-    else:
-        uncertainty_text = "The confidence band is relatively narrow, indicating more stable prediction confidence."
-
-    st.markdown(f"""
-### Graph Insight
-
-This graph compares recent historical values with future predicted values for **{selected_kpi}**.
-
-**What it shows**
-- Blue line = recent historical KPI values
-- Red line = future predicted KPI values
-- Shaded area = 95% confidence band
-
-**AI Interpretation**
-- Average current value: **{selected_current_mean:.2f}**
-- Average future value: **{selected_future_mean:.2f}**
-- Forecast uncertainty range: **{future_lower_mean:.2f} to {future_upper_mean:.2f}**
-- {trend_text}
-- {uncertainty_text}
-
-**Business Meaning**
-- Use the forecast line for expected planning.
-- Use the confidence band for risk planning.
-- Wider band means higher uncertainty and greater need for buffer planning.
-""")
-
-    st.subheader("Selected Future Prediction Summary")
-
-    if not selected_future_row.empty:
-        st.dataframe(selected_future_row, use_container_width=True)
-
-        if not selected_future_anomaly.empty:
-            future_alarm = int(selected_future_anomaly["Future_Anomaly"].iloc[0])
-
-            if future_alarm == 1:
-                st.warning("Potential anomaly predicted for the selected future period.")
-            else:
-                st.success("No anomaly predicted for the selected future period.")
-    else:
-        st.info("No prediction available for the selected future period.")
-
-    st.subheader("Future KPI Forecast Table")
-
-    forecast_display_df = pd.concat(
-        [
-            future_df.drop(columns=["Date_only"], errors="ignore"),
-            future_lower_df.drop(columns=["Date"], errors="ignore").drop(columns=["Step"], errors="ignore"),
-            future_upper_df.drop(columns=["Date"], errors="ignore").drop(columns=["Step"], errors="ignore")
-        ],
-        axis=1
-    )
-
-    st.dataframe(forecast_display_df, use_container_width=True)
-
-    st.subheader("Future Anomaly Prediction")
-
-    st.dataframe(
-        future_anomaly_df.drop(columns=["Date_only"], errors="ignore"),
-        use_container_width=True
-    )
-
-    future_anomaly_count = int(future_anomaly_df["Future_Anomaly"].sum())
-
-    if future_anomaly_count > 0:
-        st.warning(f"{future_anomaly_count} future periods are predicted as potential anomalies.")
-    else:
-        st.success("No future anomaly is predicted in the selected forecast window.")
-
-    st.subheader("Future Anomaly Risk Graph")
-
-    x_future_anom = future_anomaly_df["Date"] if "Date" in future_anomaly_df.columns else future_anomaly_df["Step"]
-
-    fig_anom = go.Figure()
-
-    fig_anom.add_trace(go.Scatter(
-        x=x_future_anom,
-        y=future_anomaly_df["SPE_Forecast"],
-        mode="lines+markers",
-        name="Future SPE"
-    ))
-
-    fig_anom.add_trace(go.Scatter(
-        x=x_future_anom,
-        y=future_anomaly_df["T2_Forecast"],
-        mode="lines+markers",
-        name="Future T²"
-    ))
-
-    fig_anom.add_trace(go.Scatter(
-        x=x_future_anom,
-        y=future_anomaly_df["G2_Forecast"],
-        mode="lines+markers",
-        name="Future G₂"
-    ))
-
-    fig_anom.add_trace(go.Scatter(
-        x=x_future_anom,
-        y=future_anomaly_df["Future_Anomaly"],
-        mode="lines+markers",
-        name="Future Alarm",
-        yaxis="y2"
-    ))
-
-    fig_anom.update_layout(
-        title="Future Anomaly Prediction using Forecasted PCA Scores",
-        xaxis_title="Date" if "Date" in future_anomaly_df.columns else "Future Step",
-        yaxis=dict(title="Anomaly Scores"),
-        yaxis2=dict(
-            title="Alarm",
-            overlaying="y",
-            side="right",
-            range=[-0.1, 1.1]
-        ),
-        hovermode="x unified",
-        template="plotly_white"
-    )
-
-    st.plotly_chart(fig_anom, use_container_width=True)
-
-    future_anomaly_rate = future_anomaly_df["Future_Anomaly"].mean() * 100
-
-    st.markdown(f"""
-### Graph Insight
-
-This graph predicts whether future periods are likely to behave normally or abnormally.
-
-**What it shows**
-- Future SPE, T², and G₂ values estimate future anomaly risk.
-- Future Alarm = 1 means potential abnormal behaviour.
-- Future Alarm = 0 means expected normal behaviour.
-
-**AI Interpretation**
-- Future anomaly periods detected: **{int(future_anomaly_df["Future_Anomaly"].sum())}**
-- Future anomaly rate: **{future_anomaly_rate:.2f}%**
-
-**Business Meaning**
-- If future anomaly risk is high, review demand, supply, and operational KPIs early.
-- Use this graph as an early-warning signal before actual disruption happens.
-""")
-
-    st.subheader("AI Recommendations for Selected Future Period")
-
-    if not selected_future_row.empty:
-        row = selected_future_row.iloc[0]
-        recommendations = []
-
-        if "sales_qty" in row:
-            if row["sales_qty"] > future_df["sales_qty"].mean():
-                recommendations.append("Demand is expected to be above average. Increase stock availability for high-demand SKUs.")
-            else:
-                recommendations.append("Demand is expected to remain below or near average. Avoid unnecessary overstock.")
-
-        if "sales_revenue" in row:
-            if row["sales_revenue"] > future_df["sales_revenue"].mean():
-                recommendations.append("Revenue is expected to be strong. Prioritize high-value SKUs and avoid stockouts.")
-            else:
-                recommendations.append("Revenue is not expected to exceed average. Review promotion or pricing opportunities.")
-
-        if "lead_time_days" in row:
-            if row["lead_time_days"] > future_df["lead_time_days"].mean():
-                recommendations.append("Lead time is expected to increase. Review supplier commitments and plan replenishment earlier.")
-            else:
-                recommendations.append("Lead time is expected to remain stable. Continue normal replenishment planning.")
-
-        if "delivery_reliability" in row:
-            if row["delivery_reliability"] < future_df["delivery_reliability"].mean():
-                recommendations.append("Delivery reliability is expected to weaken. Monitor logistics risk and prepare backup options.")
-            else:
-                recommendations.append("Delivery reliability looks stable. Maintain current logistics approach.")
-
-        if "obsolescence_risk" in row:
-            if row["obsolescence_risk"] > future_df["obsolescence_risk"].mean():
-                recommendations.append("Obsolescence risk is expected to rise. Reduce excess stock or consider promotions.")
-            else:
-                recommendations.append("Obsolescence risk is expected to remain controlled.")
-
-        if not selected_future_anomaly.empty and int(selected_future_anomaly["Future_Anomaly"].iloc[0]) == 1:
-            recommendations.append("Future anomaly risk detected. Review demand, supply, and operational KPIs before this period.")
-
-        if recommendations:
-            for rec in recommendations:
-                st.markdown(f"- {rec}")
-        else:
-            st.success("Future KPI behaviour looks stable. Continue routine monitoring.")
-
-    st.subheader("Top / Bottom SKU Impact")
-
-    if sku_col and top_skus is not None:
-        c1, c2 = st.columns(2)
-
-        with c1:
-            st.markdown(f"### Top 3 SKU_ID by High `{impact_kpi}`")
-            st.dataframe(top_skus, use_container_width=True)
-
-        with c2:
-            st.markdown(f"### Bottom 3 SKU_ID by Low `{impact_kpi}`")
-            st.dataframe(bottom_skus, use_container_width=True)
-
-    else:
-        st.info("SKU_ID column not found, so Top / Bottom SKU impact table cannot be created.")
-
 # ==================================================
-# TAB 2 — PCA
+# TAB 2 — Business Action Recommendations
 # ==================================================
 with tab2:
-    st.header("Principal Component Analysis")
+    st.header("Business Action Recommendation Table")
 
     st.markdown("""
-PCA reduces multiple retail KPIs into fewer meaningful components.
-This supports interpretation across demand, supply, and operational behaviour.
+This tab converts analytical signals into clear business actions.
 """)
 
-    variance_df = pd.DataFrame({
-        "Principal Component": pc_names,
-        "Variance Explained (%)": np.round(pca.explained_variance_ratio_ * 100, 2)
-    })
+    action_df = sku_summary.sort_values(
+        ["Action_Priority", "Total_Profit"],
+        ascending=[True, False]
+    )
 
-    st.subheader("PCA Variance Explained")
-    st.dataframe(variance_df, use_container_width=True)
+    action_cols = [
+        category_col,
+        sku_col,
+        "Total_Revenue",
+        "Total_Profit",
+        "Avg_Margin_Percent",
+        "Avg_Stock",
+        "Inventory_Status",
+        "Revenue_Leakage_Flag",
+        "Business_Action",
+        "Action_Priority"
+    ]
 
-    fig_bar = go.Figure()
-    fig_bar.add_trace(go.Bar(
-        x=variance_df["Principal Component"],
-        y=variance_df["Variance Explained (%)"]
+    st.dataframe(action_df[action_cols], use_container_width=True)
+
+    action_summary = (
+        action_df
+        .groupby(["Business_Action", "Action_Priority"])
+        .size()
+        .reset_index(name="SKU_Count")
+        .sort_values("SKU_Count", ascending=False)
+    )
+
+    st.subheader("Action Summary")
+    st.dataframe(action_summary, use_container_width=True)
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=action_summary["Business_Action"],
+        y=action_summary["SKU_Count"],
+        name="SKU Count"
     ))
 
-    fig_bar.update_layout(
-        title="Variance Explained by PCA Components",
-        xaxis_title="Principal Component",
-        yaxis_title="Variance Explained (%)",
+    fig.update_layout(
+        title="Recommended Business Actions by SKU Count",
+        xaxis_title="Business Action",
+        yaxis_title="Number of SKUs",
         template="plotly_white"
     )
 
-    st.plotly_chart(fig_bar, use_container_width=True)
-
-    total_variance = variance_df["Variance Explained (%)"].sum()
-    top_pc = variance_df.sort_values("Variance Explained (%)", ascending=False).iloc[0]
-
-    st.markdown(f"""
-### Graph Insight
-
-This graph shows how much information each principal component captures from the original KPI data.
-
-**What it shows**
-- PC1, PC2, and PC3 summarize the original KPI features.
-- Higher variance means the component explains more data behaviour.
-- Total variance retained: **{total_variance:.2f}%**
-
-**AI Interpretation**
-- The most influential component is **{top_pc["Principal Component"]}**, explaining **{top_pc["Variance Explained (%)"]:.2f}%** of the data pattern.
-
-**Business Meaning**
-- PC1 usually represents the strongest business driver.
-- PC2 and PC3 capture secondary supply and operational behaviour.
-- Together, the PCs simplify complex retail data into interpretable intelligence layers.
-""")
-
-    st.subheader("PCA Component Meaning")
-
-    for pc in pc_names:
-        info = pc_explanation.get(pc)
-        if info:
-            st.markdown(f"""
-### {pc} — {info['name']}
-- **Meaning:** {info['meaning']}
-- **Business Value:** {info['business_value']}
-""")
-
-    if n_components >= 2:
-        st.subheader("PCA Scatter Plot")
-
-        fig_scatter = go.Figure()
-        fig_scatter.add_trace(go.Scatter(
-            x=pc_df["PC1"],
-            y=pc_df["PC2"],
-            mode="markers",
-            marker=dict(size=7),
-            name="Observations"
-        ))
-
-        fig_scatter.update_layout(
-            title="PCA Projection: PC1 vs PC2",
-            xaxis_title="PC1",
-            yaxis_title="PC2",
-            template="plotly_white"
-        )
-
-        st.plotly_chart(fig_scatter, use_container_width=True)
-
-        st.markdown("""
-### Graph Insight
-
-This scatter plot shows observations projected into PCA space.
-
-**What it shows**
-- Each point represents one record after dimensionality reduction.
-- Points close together have similar KPI behaviour.
-- Points far away may indicate unusual patterns or different business behaviour.
-
-**AI Interpretation**
-- Spread in the plot indicates variation across demand, supply, or operational conditions.
-- Isolated points may require further investigation as potential anomalies.
-
-**Business Meaning**
-- Helps understand whether retail behaviour is stable or highly varied.
-- Supports early identification of unusual SKU or category patterns.
-""")
+    st.plotly_chart(fig, use_container_width=True)
 
 # ==================================================
-# TAB 3 — MONITORING
+# TAB 3 — Revenue Leakage Detection
 # ==================================================
 with tab3:
-    st.header("PCA-Based Monitoring")
+    st.header("Revenue Leakage Detection")
 
     st.markdown("""
-This tab tracks PCA-based monitoring signals.
-The threshold lines separate normal behaviour from potential abnormal behaviour.
+This tab identifies SKUs where the business may be losing revenue or profit opportunity.
 """)
 
-    fig_monitor = go.Figure()
+    leakage_df = sku_summary.sort_values("Estimated_Revenue_Leakage", ascending=False)
 
-    fig_monitor.add_trace(go.Scatter(
-        y=results["SPE"],
-        mode="lines",
-        name="SPE"
+    leakage_count = leakage_df[leakage_df["Revenue_Leakage_Flag"] == "Leakage Risk"].shape[0]
+    leakage_value = leakage_df["Estimated_Revenue_Leakage"].sum()
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Leakage Risk SKUs", leakage_count)
+    c2.metric("Estimated Leakage Value", f"{leakage_value:,.2f}")
+    c3.metric("Target Margin %", f"{target_margin_pct}%")
+
+    leakage_cols = [
+        category_col,
+        sku_col,
+        "Total_Revenue",
+        "Total_Profit",
+        "Avg_Margin_Percent",
+        "Avg_Stock",
+        "Revenue_Leakage_Flag",
+        "Revenue_Leakage_Reason",
+        "Estimated_Revenue_Leakage"
+    ]
+
+    st.subheader("Revenue Leakage Risk Table")
+    st.dataframe(leakage_df[leakage_cols], use_container_width=True)
+
+    top_leakage = leakage_df.head(10)
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=top_leakage[sku_col].astype(str),
+        y=top_leakage["Estimated_Revenue_Leakage"],
+        name="Estimated Leakage"
     ))
 
-    fig_monitor.add_trace(go.Scatter(
-        y=results["T2"],
-        mode="lines",
-        name="T²"
-    ))
-
-    fig_monitor.add_trace(go.Scatter(
-        y=results["G2"],
-        mode="lines",
-        name="G₂"
-    ))
-
-    fig_monitor.update_layout(
-        title="PCA Monitoring Metrics: SPE, T² and G₂",
-        xaxis_title="Index",
-        yaxis_title="Monitoring Score",
-        hovermode="x unified",
+    fig.update_layout(
+        title="Top 10 SKUs by Estimated Revenue Leakage",
+        xaxis_title="SKU",
+        yaxis_title="Estimated Leakage",
         template="plotly_white"
     )
 
-    st.plotly_chart(fig_monitor, use_container_width=True)
-
-    spe_max = results["SPE"].max()
-    t2_max = results["T2"].max()
-    g2_max = results["G2"].max()
-
-    st.markdown(f"""
-### Graph Insight
-
-This graph tracks PCA monitoring scores over time.
-
-**What it shows**
-- **SPE** detects sudden deviations from normal behaviour.
-- **T²** detects structural changes in PCA space.
-- **G₂** captures persistent or subtle abnormal behaviour.
-
-**AI Interpretation**
-- Maximum SPE score: **{spe_max:.2f}**
-- Maximum T² score: **{t2_max:.2f}**
-- Maximum G₂ score: **{g2_max:.2f}**
-
-**Business Meaning**
-- Rising SPE may indicate demand or revenue shocks.
-- Rising T² may indicate supply or system-level shifts.
-- Rising G₂ may indicate recurring operational instability.
-""")
+    st.plotly_chart(fig, use_container_width=True)
 
 # ==================================================
-# TAB 4 — ANOMALY DETECTION
+# TAB 4 — Inventory Optimization Engine
 # ==================================================
 with tab4:
-    st.header("Anomaly Detection and AI Recommendations")
+    st.header("Inventory Optimization Engine")
+
+    st.markdown("""
+This tab identifies understock, overstock and balanced inventory positions.
+""")
+
+    inventory_df = sku_summary.sort_values(
+        ["Inventory_Status", "Estimated_Holding_Cost"],
+        ascending=[True, False]
+    )
+
+    reorder_count = inventory_df[inventory_df["Inventory_Status"] == "Reorder Required"].shape[0]
+    overstock_count = inventory_df[inventory_df["Inventory_Status"] == "Possible Overstock"].shape[0]
+    balanced_count = inventory_df[inventory_df["Inventory_Status"] == "Balanced"].shape[0]
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Records", len(results))
-    c2.metric("Anomalies Detected", int(results["Anomaly"].sum()))
-    c3.metric("Anomaly Rate (%)", round(results["Anomaly"].mean() * 100, 2))
-    c4.metric("Threshold Percentile", threshold_percentile)
+    c1.metric("Reorder Required SKUs", reorder_count)
+    c2.metric("Possible Overstock SKUs", overstock_count)
+    c3.metric("Balanced SKUs", balanced_count)
+    c4.metric("Estimated Holding Cost", f"{inventory_df['Estimated_Holding_Cost'].sum():,.2f}")
 
-    st.subheader("Anomaly Detection Results")
-    st.dataframe(results, use_container_width=True)
+    inventory_cols = [
+        category_col,
+        sku_col,
+        "Estimated_Demand_Next_Period",
+        "Avg_Stock",
+        "Avg_Lead_Time",
+        "Recommended_Safety_Stock",
+        "Recommended_Reorder_Point",
+        "Inventory_Status",
+        "Inventory_Action",
+        "Estimated_Holding_Cost"
+    ]
 
-    fig_alarm = go.Figure()
+    st.subheader("Inventory Optimisation Table")
+    st.dataframe(inventory_df[inventory_cols], use_container_width=True)
 
-    fig_alarm.add_trace(go.Scatter(
-        y=results["Anomaly"],
-        mode="lines+markers",
-        name="Alarm",
-        line_shape="hv"
+    inventory_summary = (
+        inventory_df
+        .groupby("Inventory_Status")
+        .size()
+        .reset_index(name="SKU_Count")
+    )
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=inventory_summary["Inventory_Status"],
+        y=inventory_summary["SKU_Count"],
+        name="SKU Count"
     ))
 
-    fig_alarm.update_layout(
-        title="Alarm Trigger: 0 = Normal, 1 = Anomaly",
-        xaxis_title="Index",
-        yaxis_title="Alarm",
+    fig.update_layout(
+        title="Inventory Status Summary",
+        xaxis_title="Inventory Status",
+        yaxis_title="Number of SKUs",
         template="plotly_white"
     )
 
-    st.plotly_chart(fig_alarm, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
+
+# ==================================================
+# TAB 5 — Executive AI Summary
+# ==================================================
+with tab5:
+    st.header("Executive AI Summary")
+
+    total_revenue = sku_summary["Total_Revenue"].sum()
+    total_profit = sku_summary["Total_Profit"].sum()
+    avg_margin = sku_summary["Avg_Margin_Percent"].mean()
+    total_leakage = sku_summary["Estimated_Revenue_Leakage"].sum()
 
     anomaly_count = int(results["Anomaly"].sum())
     anomaly_rate = results["Anomaly"].mean() * 100
+    future_anomaly_count = int(future_anomaly_df["Future_Anomaly"].sum())
+
+    best_sku_row = sku_summary.sort_values("Total_Profit", ascending=False).head(1)
+    leakage_sku_row = sku_summary.sort_values("Estimated_Revenue_Leakage", ascending=False).head(1)
+
+    best_sku = best_sku_row[sku_col].iloc[0] if not best_sku_row.empty else "N/A"
+    best_profit = best_sku_row["Total_Profit"].iloc[0] if not best_sku_row.empty else 0
+
+    leakage_sku = leakage_sku_row[sku_col].iloc[0] if not leakage_sku_row.empty else "N/A"
+    leakage_value = leakage_sku_row["Estimated_Revenue_Leakage"].iloc[0] if not leakage_sku_row.empty else 0
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Revenue", f"{total_revenue:,.2f}")
+    c2.metric("Total Profit", f"{total_profit:,.2f}")
+    c3.metric("Average Margin %", f"{avg_margin:.2f}%")
+    c4.metric("Estimated Leakage", f"{total_leakage:,.2f}")
 
     st.markdown(f"""
-### Graph Insight
+### Overall Business Position
 
-This graph converts monitoring scores into simple anomaly alarms.
+The analysed dataset generated total revenue of **{total_revenue:,.2f}** and total profit of **{total_profit:,.2f}**.  
+The average margin across SKUs is **{avg_margin:.2f}%**.
 
-**What it shows**
-- Alarm = 0 means normal behaviour.
-- Alarm = 1 means anomaly detected.
-- Alarm is triggered when SPE, T², or G₂ crosses the selected threshold.
+### Best Commercial Opportunity
 
-**AI Interpretation**
-- Total anomalies detected: **{anomaly_count}**
-- Anomaly rate: **{anomaly_rate:.2f}%**
-
-**Business Meaning**
-- Helps users quickly identify abnormal periods.
-- Supports faster action on demand, supply, or operational issues.
-- Converts technical monitoring into business-ready alerts.
-""")
-
-    st.subheader("AI Recommendations")
-
-    if anomaly_rate > 20:
-        st.warning("""
-High anomaly rate detected.
+The strongest profit-contributing SKU is **{best_sku}**, contributing approximately **{best_profit:,.2f}** in profit.
 
 Recommended actions:
-- Review demand spikes and sales volatility
-- Check supplier lead-time issues
-- Investigate delivery reliability
-- Increase monitoring frequency
-- Consider safety stock adjustment
-""")
-    elif anomaly_rate > 5:
-        st.info("""
-Moderate anomaly rate detected.
+- Prioritise this SKU for promotion
+- Maintain stock availability
+- Avoid supply disruption
+- Consider bundle or cross-sell opportunities
+
+### Revenue Leakage Risk
+
+The SKU with the highest estimated leakage is **{leakage_sku}**, with estimated leakage of **{leakage_value:,.2f}**.
 
 Recommended actions:
-- Monitor high-risk KPIs closely
-- Review demand and supply-related drivers
-- Validate replenishment planning assumptions
-- Track recurring abnormal periods
-""")
-    else:
-        st.success("""
-Low anomaly rate detected.
+- Review pricing
+- Check cost structure
+- Investigate slow-moving stock
+- Consider promotional clearance
 
-Recommended actions:
-- Continue routine monitoring
-- Maintain current inventory strategy
-- Use forecasts for proactive replenishment planning
+### Inventory Position
+
+- Reorder required SKUs: **{reorder_count}**
+- Possible overstock SKUs: **{overstock_count}**
+- Balanced SKUs: **{balanced_count}**
+
+### Risk and Anomaly Position
+
+- Historical anomaly count: **{anomaly_count}**
+- Historical anomaly rate: **{anomaly_rate:.2f}%**
+- Future anomaly periods predicted: **{future_anomaly_count}**
+
+### CEO / CTO Level Recommendation
+
+The business should focus on three priorities:
+
+1. **Grow profitable SKUs**  
+   Promote high-profit and high-margin SKUs.
+
+2. **Fix leakage areas**  
+   Investigate low-margin, low-revenue and overstocked SKUs.
+
+3. **Optimise inventory investment**  
+   Reduce excess stock while protecting high-demand SKUs from stockout risk.
 """)
+
+    executive_actions = pd.DataFrame({
+        "Priority": ["High", "High", "Medium", "Medium", "Low"],
+        "Action Area": [
+            "Profit Growth",
+            "Revenue Leakage",
+            "Inventory Optimisation",
+            "Anomaly Monitoring",
+            "Forecast Governance"
+        ],
+        "Recommended Action": [
+            "Promote high-profit SKUs and protect stock availability",
+            "Investigate SKUs with low margin, low revenue or excess stock",
+            "Reorder understocked SKUs and reduce overstock exposure",
+            "Monitor abnormal KPI behaviour using backend anomaly signals",
+            "Review model outputs periodically with business users"
+        ],
+        "Business Benefit": [
+            "Revenue and profit uplift",
+            "Reduced missed revenue opportunity",
+            "Lower holding cost and fewer stockouts",
+            "Earlier risk detection",
+            "Improved trust in AI-driven planning"
+        ]
+    })
+
+    st.subheader("Top Executive Actions")
+    st.dataframe(executive_actions, use_container_width=True)
