@@ -848,15 +848,6 @@ with tab3:
         sku_summary["Inventory_Status"] == "Possible Overstock"
     ].shape[0]
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Estimated Leakage", f"{total_leakage:,.2f}")
-    c2.metric("Holding Cost", f"{total_holding_cost:,.2f}")
-    c3.metric("High Risk SKUs", leakage_count + reorder_count)
-    c4.metric(
-        "Anomaly Risk",
-        "Yes" if future_anomaly_flag == 1 else "No"
-    )
-
     recommendation_summary = (
         sku_summary
         .groupby(["Recommended_AI_Action", "Priority"])
@@ -869,32 +860,6 @@ with tab3:
 
     st.dataframe(
         recommendation_summary,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    recommendation_df = sku_summary.sort_values(
-        ["Priority", "Estimated_Revenue_Leakage", "Estimated_Holding_Cost"],
-        ascending=[True, False, False]
-    )
-
-    recommendation_cols = [
-        category_col,
-        sku_col,
-        "Predicted_Revenue",
-        "Predicted_Profit",
-        "Predicted_Quantity",
-        "Predicted_Stock",
-        "Revenue_Leakage_Flag",
-        "Inventory_Status",
-        "Recommended_AI_Action",
-        "Priority"
-    ]
-
-    st.subheader("SKU-Level AI Recommendations")
-
-    st.dataframe(
-        recommendation_df[recommendation_cols],
         use_container_width=True,
         hide_index=True
     )
