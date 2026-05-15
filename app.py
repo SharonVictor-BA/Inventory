@@ -600,9 +600,9 @@ sku_summary["Priority"] = np.select(
 # Tabs
 # --------------------------------------------------
 tab1, tab2, tab3 = st.tabs([
-    "1. Revenue Leakage & Inventory Optimization",
-    "2. Demand & Forecasting",
-    "3. Estimated AI Recommendations"
+    "Revenue Leakage & Inventory Optimization",
+    "Demand & Forecasting",
+    "Estimated AI Recommendations"
 ])
 
 # ==================================================
